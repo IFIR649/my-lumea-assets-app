@@ -1,0 +1,7 @@
+{
+  "port": 3005,
+  "uiPort": 5173,
+  "mode": "lan_only",
+  "lanHost": "192.168.0.158",
+  "advertiseIp": "192.168.0.158"
+}

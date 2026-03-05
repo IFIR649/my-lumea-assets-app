@@ -1,0 +1,28 @@
+# Ignorar dependencias comunes
+node_modules/
+vendor/
+
+# Ignorar archivos de compilación y distribución
+dist/
+build/
+out/
+
+# Ignorar archivos temporales
+tmp/
+*.log
+*.tmp
+*.swp
+
+# Ignorar configuraciones locales
+.env
+.env.local
+*.secret
+
+# Ignorar archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de IDEs
+.vscode/
+.idea/
+*.iml

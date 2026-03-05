@@ -1,0 +1,6 @@
+un solo link 
+NPM RUN start
+
+ruta admin
+http://localhost:3005/api/admin
+
