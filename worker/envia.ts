@@ -65,6 +65,25 @@ const GEOCODE_PATHS = [
   (zip: string) => `/zip-codes/${encodeURIComponent(zip)}`,
   (zip: string) => `/zipcode/${encodeURIComponent(zip)}`
 ]
+const CARRIER_QUERY_PATHS = [
+  (country: string) => `/carrier?country_code=${encodeURIComponent(country)}`,
+  (country: string) => `/carrier?country=${encodeURIComponent(country)}`,
+  (country: string) => `/carrier?code=${encodeURIComponent(country)}`
+]
+const SERVICE_QUERY_PATHS = [
+  (country: string, carrier: string | null) =>
+    `/service?country_code=${encodeURIComponent(country)}${
+      carrier ? `&carrier=${encodeURIComponent(carrier)}` : ''
+    }`,
+  (country: string, carrier: string | null) =>
+    `/service?country=${encodeURIComponent(country)}${
+      carrier ? `&carrier=${encodeURIComponent(carrier)}` : ''
+    }`,
+  (country: string, carrier: string | null) =>
+    `/service?code=${encodeURIComponent(country)}${
+      carrier ? `&carrier=${encodeURIComponent(carrier)}` : ''
+    }`
+]
 const QUOTE_PATHS = ['/ship/rate/', '/ship/rates/', '/ship/quote/']
 const LABEL_PATHS = ['/ship/generate/', '/ship/create/', '/ship/labels/']
 const TRACK_PATHS = ['/ship/generaltrack/', '/ship/track/']
@@ -75,6 +94,21 @@ export class EnviaConfigError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'EnviaConfigError'
+  }
+}
+
+export class EnviaRequestError extends Error {
+  code = 'envia_request_error'
+  status: number
+  payload: unknown
+  url: string
+
+  constructor(message: string, options: { status: number; payload: unknown; url: string }) {
+    super(message)
+    this.name = 'EnviaRequestError'
+    this.status = options.status
+    this.payload = options.payload
+    this.url = options.url
   }
 }
 
@@ -90,6 +124,7 @@ function normalizeBaseUrl(value: unknown): string {
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
+    if (value && typeof value === 'object') continue
     const normalized = String(value || '').trim()
     if (normalized) return normalized
   }
@@ -106,6 +141,109 @@ function pickNumber(...values: unknown[]): number | null {
 
 function toRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null
+}
+
+function pickRecord(...values: unknown[]): JsonRecord | null {
+  for (const value of values) {
+    const record = toRecord(value)
+    if (record) return record
+  }
+  return null
+}
+
+function getQuoteAmount(item: JsonRecord): number | null {
+  const pricing = pickRecord(item.pricing, item.price_detail, item.priceDetail)
+  const price = pickRecord(item.price)
+  return normalizeAmountToCents(
+    item.total_price ??
+      item.totalPrice ??
+      item.price ??
+      item.rate ??
+      item.amount ??
+      item.total ??
+      item.shipping_total ??
+      item.shippingTotal ??
+      item.cost ??
+      pricing?.total ??
+      pricing?.amount ??
+      pricing?.price ??
+      price?.total ??
+      price?.amount
+  )
+}
+
+function getQuoteCarrier(item: JsonRecord): string {
+  const carrier = pickRecord(item.carrier)
+  const provider = pickRecord(item.provider)
+  const company = pickRecord(item.company)
+  return pickString(
+    item.carrier_name,
+    item.carrierName,
+    item.provider_name,
+    item.providerName,
+    item.provider,
+    item.company,
+    carrier?.name,
+    carrier?.code,
+    carrier?.slug,
+    provider?.name,
+    provider?.code,
+    provider?.slug,
+    company?.name,
+    company?.code,
+    typeof item.carrier === 'string' ? item.carrier : '',
+    typeof item.name === 'string' ? item.name : ''
+  )
+}
+
+function getQuoteService(item: JsonRecord): string {
+  const service = pickRecord(item.service)
+  const serviceLevel = pickRecord(item.service_level, item.serviceLevel)
+  return pickString(
+    item.service_name,
+    item.serviceName,
+    item.service_type,
+    item.serviceType,
+    item.service_level_name,
+    item.serviceLevelName,
+    item.service_code,
+    item.serviceCode,
+    item.shipping_service,
+    item.shippingService,
+    service?.name,
+    service?.code,
+    service?.type,
+    serviceLevel?.name,
+    serviceLevel?.code,
+    typeof item.service === 'string' ? item.service : '',
+    typeof item.type === 'string' ? item.type : ''
+  )
+}
+
+function getQuoteEstimatedDays(item: JsonRecord): number | null {
+  const delivery = pickRecord(item.delivery, item.delivery_estimate, item.deliveryEstimate)
+  return pickNumber(
+    item.estimated_days,
+    item.estimatedDays,
+    item.delivery_days,
+    item.deliveryDays,
+    item.transit_days,
+    item.transitDays,
+    delivery?.days,
+    delivery?.estimated_days,
+    delivery?.estimatedDays
+  )
+}
+
+function buildRequestError(result: RequestResult, fallbackLabel: string): EnviaRequestError {
+  const payloadRecord = toRecord(result.payload)
+  const message =
+    pickString(payloadRecord?.message, payloadRecord?.error) || `${fallbackLabel} con HTTP ${result.status}.`
+  return new EnviaRequestError(message, {
+    status: result.status,
+    payload: result.payload,
+    url: result.url
+  })
 }
 
 function collectObjectCandidates(payload: unknown): JsonRecord[] {
@@ -286,18 +424,69 @@ function normalizeAmountToCents(value: unknown): number | null {
 function quoteCandidatesFromPayload(payload: unknown): JsonRecord[] {
   const objects = collectObjectCandidates(payload)
   return objects.filter((item) => {
-    const amount = normalizeAmountToCents(
-      item.total_price ?? item.totalPrice ?? item.price ?? item.rate ?? item.amount ?? item.total
-    )
-    const carrier = pickString(
-      item.carrier,
-      item.carrier_name,
-      item.carrierName,
-      item.provider,
-      item.name
-    )
+    const amount = getQuoteAmount(item)
+    const carrier = getQuoteCarrier(item)
     return amount !== null && Boolean(carrier)
   })
+}
+
+function truthyValue(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value > 0
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return null
+  if (['true', '1', 'yes', 'active'].includes(normalized)) return true
+  if (['false', '0', 'no', 'inactive'].includes(normalized)) return false
+  return null
+}
+
+function topLevelObjects(payload: unknown): JsonRecord[] {
+  const record = toRecord(payload)
+  const pools = [payload, record?.data, record?.results, record?.items]
+  const out: JsonRecord[] = []
+  for (const pool of pools) {
+    if (Array.isArray(pool)) {
+      for (const item of pool) {
+        const object = toRecord(item)
+        if (object) out.push(object)
+      }
+      if (out.length) return out
+    }
+  }
+  return out
+}
+
+function normalizeCarrierNames(payload: unknown): string[] {
+  const objects = topLevelObjects(payload)
+  const names = objects
+    .map((item) => {
+      const active = truthyValue(item.active ?? item.enabled ?? item.available)
+      if (active === false) return ''
+      return pickString(item.name, item.carrier, item.slug, item.code, item.carrier_name)
+    })
+    .filter(Boolean)
+
+  return [...new Set(names)]
+}
+
+function normalizeServiceNames(payload: unknown, carrier: string | null = null): string[] {
+  const requestedCarrier = String(carrier || '')
+    .trim()
+    .toLowerCase()
+  const objects = topLevelObjects(payload)
+  const names = objects
+    .map((item) => {
+      const active = truthyValue(item.active ?? item.enabled ?? item.available)
+      if (active === false) return ''
+
+      const itemCarrier = getQuoteCarrier(item).toLowerCase()
+      if (requestedCarrier && itemCarrier && itemCarrier !== requestedCarrier) return ''
+
+      return getQuoteService(item)
+    })
+    .filter(Boolean)
+
+  return [...new Set(names)]
 }
 
 function shipmentCandidatesFromPayload(payload: unknown): JsonRecord[] {
@@ -337,36 +526,16 @@ function normalizeShipmentStatus(value: unknown): NormalizedTrackingResult['stat
 export function normalizeQuotes(payload: unknown, allowedCarriers: string[] = []): NormalizedQuote[] {
   const quotes = quoteCandidatesFromPayload(payload)
     .map((item) => {
-      const carrier = pickString(
-        item.carrier,
-        item.carrier_name,
-        item.carrierName,
-        item.provider,
-        item.name
-      )
-      const service = pickString(
-        item.service,
-        item.service_name,
-        item.serviceName,
-        item.service_type,
-        item.serviceType,
-        item.type
-      )
-      const amount_cents = normalizeAmountToCents(
-        item.total_price ?? item.totalPrice ?? item.price ?? item.rate ?? item.amount ?? item.total
-      )
+      const carrier = getQuoteCarrier(item)
+      const service = getQuoteService(item)
+      const amount_cents = getQuoteAmount(item)
       if (!carrier || !service || amount_cents === null) return null
       return {
         carrier,
         service,
         amount_cents,
         currency: normalizeCurrency(item.currency),
-        estimated_days: pickNumber(
-          item.estimated_days,
-          item.estimatedDays,
-          item.delivery_days,
-          item.deliveryDays
-        ),
+        estimated_days: getQuoteEstimatedDays(item),
         raw: item
       }
     })
@@ -585,16 +754,72 @@ export async function quoteShipment(
   )
 
   if (!result.ok) {
-    throw new Error(
-      pickString((result.payload as JsonRecord | null)?.message, (result.payload as JsonRecord | null)?.error) ||
-        `Envia quote fallo con HTTP ${result.status}.`
-    )
+    throw buildRequestError(result, 'Envia quote fallo')
   }
 
   return {
     payload: result.payload,
     quotes: normalizeQuotes(result.payload, config.allowedCarriers)
   }
+}
+
+export async function listAvailableCarriers(
+  env: EnviaEnvLike,
+  countryCode = 'MX'
+): Promise<string[]> {
+  const config = assertConfig(env)
+  const headers = { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
+  let lastError: EnviaRequestError | null = null
+
+  for (const buildPath of CARRIER_QUERY_PATHS) {
+    const result = await fetchJson(
+      `${config.queriesBaseUrl}${buildPath(countryCode)}`,
+      { method: 'GET', headers },
+      config.timeoutMs
+    )
+
+    if (result.status === 404 || result.status === 400) continue
+    if (!result.ok) {
+      lastError = buildRequestError(result, 'Envia carriers fallo')
+      continue
+    }
+
+    const carriers = normalizeCarrierNames(result.payload)
+    if (carriers.length > 0) return carriers
+  }
+
+  if (lastError) throw lastError
+  return []
+}
+
+export async function listAvailableServices(
+  env: EnviaEnvLike,
+  countryCode = 'MX',
+  carrier: string | null = null
+): Promise<string[]> {
+  const config = assertConfig(env)
+  const headers = { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
+  let lastError: EnviaRequestError | null = null
+
+  for (const buildPath of SERVICE_QUERY_PATHS) {
+    const result = await fetchJson(
+      `${config.queriesBaseUrl}${buildPath(countryCode, carrier)}`,
+      { method: 'GET', headers },
+      config.timeoutMs
+    )
+
+    if (result.status === 404 || result.status === 400) continue
+    if (!result.ok) {
+      lastError = buildRequestError(result, 'Envia services fallo')
+      continue
+    }
+
+    const services = normalizeServiceNames(result.payload, carrier)
+    if (services.length > 0) return services
+  }
+
+  if (lastError) throw lastError
+  return []
 }
 
 export async function createShippingLabel(
@@ -611,10 +836,7 @@ export async function createShippingLabel(
   )
 
   if (!result.ok) {
-    throw new Error(
-      pickString((result.payload as JsonRecord | null)?.message, (result.payload as JsonRecord | null)?.error) ||
-        `Envia label fallo con HTTP ${result.status}.`
-    )
+    throw buildRequestError(result, 'Envia label fallo')
   }
 
   return normalizeShipmentResult(result.payload)
@@ -634,10 +856,7 @@ export async function trackShipment(
   )
 
   if (!result.ok) {
-    throw new Error(
-      pickString((result.payload as JsonRecord | null)?.message, (result.payload as JsonRecord | null)?.error) ||
-        `Envia tracking fallo con HTTP ${result.status}.`
-    )
+    throw buildRequestError(result, 'Envia tracking fallo')
   }
 
   return normalizeTrackingResult(result.payload)

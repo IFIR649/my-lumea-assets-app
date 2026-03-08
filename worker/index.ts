@@ -1,6 +1,9 @@
 import {
   createShippingLabel,
   downloadLabelBinary,
+  EnviaRequestError,
+  listAvailableCarriers,
+  listAvailableServices,
   pingEnviaApis,
   quoteShipment,
   trackShipment,
@@ -1279,10 +1282,10 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
             COALESCE(o.shipping_status, 'pending'),
             COALESCE(o.currency, 'MXN'),
             json_object(
-              'weight_kg', NULL,
-              'length_cm', NULL,
-              'width_cm', NULL,
-              'height_cm', NULL,
+              'weight_kg', 1,
+              'length_cm', 10,
+              'width_cm', 10,
+              'height_cm', 10,
               'declared_value_cents', COALESCE(o.total_amount_cents, 0),
               'content', 'Joyeria Lumea Imperium',
               'notes', NULL
@@ -1338,6 +1341,183 @@ function toObjectRecord(value: unknown): Record<string, unknown> | null {
 function cleanText(value: unknown): string | null {
   const normalized = String(value || '').trim()
   return normalized || null
+}
+
+const ENVIA_GEOCODE_CANDIDATES = [
+  (zip: string, country = 'MX') =>
+    `/zipcode/${encodeURIComponent(country)}/${encodeURIComponent(zip)}`,
+  (zip: string) => `/validate-zip-code?zip_code=${encodeURIComponent(zip)}`,
+  (zip: string) => `/validate-zip-code?postal_code=${encodeURIComponent(zip)}`
+]
+
+const enviaMxStateCodeCache = new Map<string, string>()
+
+function compactObject(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const compacted = value
+      .map((item) => compactObject(item))
+      .filter((item) => item !== null && item !== undefined)
+    return compacted
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, entryValue]) => [key, compactObject(entryValue)] as const)
+    .filter(([, entryValue]) => {
+      if (entryValue === null || entryValue === undefined) return false
+      if (typeof entryValue === 'string' && !entryValue.trim()) return false
+      if (Array.isArray(entryValue) && entryValue.length === 0) return false
+      if (
+        typeof entryValue === 'object' &&
+        !Array.isArray(entryValue) &&
+        Object.keys(entryValue as Record<string, unknown>).length === 0
+      ) {
+        return false
+      }
+      return true
+    })
+
+  return Object.fromEntries(entries)
+}
+
+function normalizeCountryCode(value: unknown, fallback = 'MX'): string {
+  return String(value || fallback)
+    .trim()
+    .toUpperCase() || fallback
+}
+
+function normalizeMxStateCode(value: unknown): string | null {
+  const raw = cleanText(value)
+  if (!raw) return null
+
+  const normalized = raw.toUpperCase()
+  if (/^[A-Z]{2,3}$/.test(normalized)) {
+    return normalized
+  }
+
+  const isoMatch = normalized.match(/(?:^|-)(([A-Z]{2,3}))$/)
+  if (isoMatch) {
+    return isoMatch[1]
+  }
+
+  return null
+}
+
+function extractMxStateCodeFromValidation(validation: Record<string, unknown> | null): string | null {
+  if (!validation) return null
+
+  const raw = toObjectRecord(validation.raw)
+  const stateRecord = toObjectRecord(raw?.state)
+  const stateCodeRecord = toObjectRecord(stateRecord?.code)
+
+  return (
+    normalizeMxStateCode(stateCodeRecord?.['2digit']) ||
+    normalizeMxStateCode(stateCodeRecord?.['3digit']) ||
+    normalizeMxStateCode(stateRecord?.iso_code) ||
+    normalizeMxStateCode(validation.state)
+  )
+}
+
+function resolveEnviaTimeoutMs(env: Env): number {
+  const parsed = Number(env.ENVIA_TIMEOUT_MS || 10000)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 10000
+  return Math.max(2000, Math.min(parsed, 30000))
+}
+
+function resolveEnviaGeocodesBaseUrl(env: Env): string {
+  return cleanText(env.ENVIA_GEOCODES_BASE_URL) || 'https://geocodes.envia.com'
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal })
+    if (!response.ok) {
+      return null
+    }
+
+    const text = await response.text()
+    if (!text) return null
+
+    try {
+      return JSON.parse(text)
+    } catch {
+      return null
+    }
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function extractMxStateCodeFromGeocodePayload(payload: unknown): string | null {
+  const root = toObjectRecord(payload)
+  const candidates = [
+    payload,
+    root?.data,
+    root?.results,
+    root?.items,
+    root?.zip_code,
+    root?.postal_code
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        const stateCode = extractMxStateCodeFromValidation({ raw: item })
+        if (stateCode) return stateCode
+      }
+      continue
+    }
+
+    const stateCode = extractMxStateCodeFromValidation({ raw: candidate })
+    if (stateCode) return stateCode
+  }
+
+  return null
+}
+
+async function lookupMxStateCodeByZip(
+  env: Env,
+  postalCode: string | null,
+  countryCode: string
+): Promise<string | null> {
+  const normalizedPostalCode = cleanText(postalCode)
+  if (!normalizedPostalCode || countryCode !== 'MX') return null
+
+  const cacheKey = `${countryCode}:${normalizedPostalCode}`
+  const cached = enviaMxStateCodeCache.get(cacheKey)
+  if (cached) return cached
+
+  const apiKey = cleanText(env.ENVIA_API_KEY)
+  if (!apiKey) return null
+
+  const headers = {
+    accept: 'application/json',
+    authorization: `Bearer ${apiKey}`
+  }
+  const baseUrl = resolveEnviaGeocodesBaseUrl(env).replace(/\/+$/, '')
+  const timeoutMs = resolveEnviaTimeoutMs(env)
+
+  for (const buildPath of ENVIA_GEOCODE_CANDIDATES) {
+    const payload = await fetchJsonWithTimeout(
+      `${baseUrl}${buildPath(normalizedPostalCode, countryCode)}`,
+      { method: 'GET', headers },
+      timeoutMs
+    ).catch(() => null)
+
+    const stateCode = extractMxStateCodeFromGeocodePayload(payload)
+    if (stateCode) {
+      enviaMxStateCodeCache.set(cacheKey, stateCode)
+      return stateCode
+    }
+  }
+
+  return null
 }
 
 function parsePositiveFloat(value: unknown, fallback: number | null = null): number | null {
@@ -2113,10 +2293,10 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
                 amount: 1,
                 type: 'box',
                 declared_value: 1,
-                weight: Number(env.ENVIA_DEFAULT_WEIGHT_KG || 0.3) || 0.3,
-                length: Number(env.ENVIA_DEFAULT_LENGTH_CM || 18) || 18,
-                width: Number(env.ENVIA_DEFAULT_WIDTH_CM || 14) || 14,
-                height: Number(env.ENVIA_DEFAULT_HEIGHT_CM || 6) || 6
+                weight: Number(env.ENVIA_DEFAULT_WEIGHT_KG || 1) || 1,
+                length: Number(env.ENVIA_DEFAULT_LENGTH_CM || 10) || 10,
+                width: Number(env.ENVIA_DEFAULT_WIDTH_CM || 10) || 10,
+                height: Number(env.ENVIA_DEFAULT_HEIGHT_CM || 10) || 10
               }
             ]
           }
@@ -3841,10 +4021,10 @@ function buildDefaultParcel(
   existing: Record<string, unknown> | null = null
 ): Record<string, unknown> {
   return {
-    weight_kg: parsePositiveFloat(existing?.weight_kg, parsePositiveFloat(env.ENVIA_DEFAULT_WEIGHT_KG, 0.3)),
-    length_cm: parsePositiveFloat(existing?.length_cm, parsePositiveFloat(env.ENVIA_DEFAULT_LENGTH_CM, 18)),
-    width_cm: parsePositiveFloat(existing?.width_cm, parsePositiveFloat(env.ENVIA_DEFAULT_WIDTH_CM, 14)),
-    height_cm: parsePositiveFloat(existing?.height_cm, parsePositiveFloat(env.ENVIA_DEFAULT_HEIGHT_CM, 6)),
+    weight_kg: parsePositiveFloat(existing?.weight_kg, parsePositiveFloat(env.ENVIA_DEFAULT_WEIGHT_KG, 1)),
+    length_cm: parsePositiveFloat(existing?.length_cm, parsePositiveFloat(env.ENVIA_DEFAULT_LENGTH_CM, 10)),
+    width_cm: parsePositiveFloat(existing?.width_cm, parsePositiveFloat(env.ENVIA_DEFAULT_WIDTH_CM, 10)),
+    height_cm: parsePositiveFloat(existing?.height_cm, parsePositiveFloat(env.ENVIA_DEFAULT_HEIGHT_CM, 10)),
     declared_value_cents: parseNonNegativeCents(existing?.declared_value_cents, totalAmountCents),
     content: cleanText(existing?.content) || cleanText(env.ENVIA_DEFAULT_CONTENT) || 'Joyeria Lumea Imperium',
     notes: cleanText(existing?.notes)
@@ -3884,26 +4064,62 @@ function getOrderShippingDestination(order: Record<string, unknown>): Record<str
   const shippingAddress = toObjectRecord(order.shipping_address)
   const address = toObjectRecord(shippingAddress?.address)
   if (!address) return null
+  const shipment = toObjectRecord(order.shipment)
+  const addressValidation = toObjectRecord(shipment?.address_validation)
+
+  const rawLine1 = cleanText(address.line1) || ''
+  let street = rawLine1
+  let number: string | null = null
+  let districtFromLine1: string | null = null
+
+  const districtMatch = rawLine1.match(/\b(?:col(?:onia)?\.?|fracc(?:ionamiento)?\.?|barrio)\b.*$/i)
+  if (districtMatch && typeof districtMatch.index === 'number') {
+    districtFromLine1 = cleanText(districtMatch[0])
+    street = rawLine1.slice(0, districtMatch.index).trim()
+  }
+
+  const numberMatch =
+    street.match(/(?:#|no\.?|num(?:ero)?\.?)\s*([A-Za-z0-9-]+)/i) ||
+    street.match(/\b(\d+[A-Za-z0-9-]*)\b(?!.*\b\d+[A-Za-z0-9-]*\b)/)
+  if (numberMatch) {
+    number = cleanText(numberMatch[1])
+    street = street.replace(numberMatch[0], ' ').replace(/\s+/g, ' ').trim()
+  }
+
+  const country = normalizeCountryCode(address.country, 'MX')
+  const normalizedState =
+    country === 'MX'
+      ? extractMxStateCodeFromValidation(addressValidation) ||
+        normalizeMxStateCode(address.state) ||
+        cleanText(address.state)
+      : cleanText(address.state)
 
   return {
     name: cleanText(shippingAddress?.name) || cleanText(order.customer_name),
     email: cleanText(order.customer_email),
     phone: cleanText(shippingAddress?.phone) || cleanText(order.customer_phone),
-    street: cleanText(address.line1),
-    number: null,
-    district: cleanText(address.line2),
+    street: cleanText(street) || rawLine1,
+    number,
+    district: districtFromLine1 || cleanText(address.line2),
     city: cleanText(address.city),
-    state: cleanText(address.state),
-    country: cleanText(address.country) || 'MX',
+    state: normalizedState,
+    country,
     postal_code: cleanText(address.postal_code)
   }
 }
 
-function getOriginAddress(env: Env): Record<string, unknown> | null {
+async function getOriginAddress(env: Env): Promise<Record<string, unknown> | null> {
   const street = cleanText(env.ENVIA_FROM_STREET)
   const city = cleanText(env.ENVIA_FROM_CITY)
-  const state = cleanText(env.ENVIA_FROM_STATE)
   const postal_code = cleanText(env.ENVIA_FROM_ZIP)
+  const country = normalizeCountryCode(env.ENVIA_FROM_COUNTRY, 'MX')
+
+  let state =
+    country === 'MX'
+      ? normalizeMxStateCode(env.ENVIA_FROM_STATE) ||
+        (await lookupMxStateCodeByZip(env, postal_code, country))
+      : cleanText(env.ENVIA_FROM_STATE)
+
   if (!street || !city || !state || !postal_code) return null
 
   return {
@@ -3916,13 +4132,13 @@ function getOriginAddress(env: Env): Record<string, unknown> | null {
     district: cleanText(env.ENVIA_FROM_DISTRICT),
     city,
     state,
-    country: cleanText(env.ENVIA_FROM_COUNTRY) || 'MX',
+    country,
     postal_code
   }
 }
 
 function buildAddressPayload(address: Record<string, unknown>): Record<string, unknown> {
-  return {
+  return compactObject({
     name: address.name,
     company: address.company,
     email: address.email,
@@ -3937,12 +4153,15 @@ function buildAddressPayload(address: Record<string, unknown>): Record<string, u
     postalCode: address.postal_code,
     zip_code: address.postal_code,
     zipCode: address.postal_code
-  }
+  }) as Record<string, unknown>
 }
 
 function buildPackagePayload(parcel: Record<string, unknown>): Record<string, unknown> {
   const declaredValueCents = Number(parcel.declared_value_cents || 0)
-  return {
+  const length = Number(parcel.length_cm || 0)
+  const width = Number(parcel.width_cm || 0)
+  const height = Number(parcel.height_cm || 0)
+  return compactObject({
     content: parcel.content,
     amount: 1,
     type: 'box',
@@ -3950,46 +4169,57 @@ function buildPackagePayload(parcel: Record<string, unknown>): Record<string, un
     weight_kg: Number(parcel.weight_kg || 0),
     weightUnit: 'KG',
     weight_unit: 'KG',
-    length: Number(parcel.length_cm || 0),
-    width: Number(parcel.width_cm || 0),
-    height: Number(parcel.height_cm || 0),
+    length,
+    width,
+    height,
+    dimensions: {
+      length,
+      width,
+      height,
+      unit: 'CM'
+    },
     dimensionUnit: 'CM',
     dimension_unit: 'CM',
     declaredValue: declaredValueCents / 100,
     declared_value: declaredValueCents / 100,
     insurance: declaredValueCents / 100
-  }
+  }) as Record<string, unknown>
 }
 
-function buildQuoteRequestPayload(
+async function buildQuoteRequestPayload(
   env: Env,
   order: Record<string, unknown>,
-  parcel: Record<string, unknown>
-): Record<string, unknown> {
-  const origin = getOriginAddress(env)
+  parcel: Record<string, unknown>,
+  requestedCarrier: string | null = null,
+  requestedService: string | null = null
+): Promise<Record<string, unknown>> {
+  const origin = await getOriginAddress(env)
   const destination = getOrderShippingDestination(order)
   if (!origin || !destination) {
     throw new Error('Configuracion de origen o direccion destino incompleta para cotizar.')
   }
 
-  return {
+  return compactObject({
     origin: buildAddressPayload(origin),
     destination: buildAddressPayload(destination),
     packages: [buildPackagePayload(parcel)],
-    shipment: {
-      carrier: null,
-      service: null
-    }
-  }
+    shipment:
+      requestedCarrier || requestedService
+        ? {
+            carrier: requestedCarrier,
+            service: requestedService
+          }
+        : undefined
+  }) as Record<string, unknown>
 }
 
-function buildLabelRequestPayload(
+async function buildLabelRequestPayload(
   env: Env,
   order: Record<string, unknown>,
   parcel: Record<string, unknown>,
   quote: NormalizedQuote
-): Record<string, unknown> {
-  const payload = buildQuoteRequestPayload(env, order, parcel)
+): Promise<Record<string, unknown>> {
+  const payload = await buildQuoteRequestPayload(env, order, parcel)
   return {
     ...payload,
     shipment: {
@@ -4370,11 +4600,100 @@ async function quoteOrderShipment(
     throw new Error(parcelResult.error)
   }
 
-  const requestPayload = buildQuoteRequestPayload(env, order, parcelResult.parcel)
-  const quoteResult = await quoteShipment(env, requestPayload)
-  const selected = selectQuote(quoteResult.quotes, payload)
+  const requestedCarrier = cleanText(payload?.carrier)
+  const requestedService = cleanText(payload?.service)
+  const requestPayload = await buildQuoteRequestPayload(
+    env,
+    order,
+    parcelResult.parcel,
+    requestedCarrier,
+    requestedService
+  )
+
+  let quoteResult
+  let aggregatedQuotes: NormalizedQuote[] = []
+  let attemptedCarriers: string[] = []
+  try {
+    quoteResult = await quoteShipment(env, requestPayload)
+    aggregatedQuotes = [...quoteResult.quotes]
+  } catch (error) {
+    quoteResult = {
+      payload: error instanceof EnviaRequestError ? error.payload : null,
+      quotes: []
+    }
+    if (requestedCarrier) {
+      const message = getErrorMessage(error)
+      await upsertShipmentRow(env, orderId, {
+        parcel_json: safeStringify(parcelResult.parcel),
+        envia_request_json: safeStringify(requestPayload),
+        envia_response_json: error instanceof EnviaRequestError ? safeStringify(error.payload) : null,
+        last_error: message
+      })
+      await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
+        requested_carrier: requestedCarrier,
+        requested_service: requestedService,
+        error: message,
+        payload: error instanceof EnviaRequestError ? error.payload : null
+      })
+      throw error
+    }
+  }
+
+  if (!requestedCarrier && aggregatedQuotes.length === 0) {
+    const destination = getOrderShippingDestination(order)
+    const destinationCountry = cleanText(destination?.country) || 'MX'
+    const discoveredCarriers = await listAvailableCarriers(env, destinationCountry).catch(
+      () => [] as string[]
+    )
+    attemptedCarriers = discoveredCarriers
+
+    const quoteMap = new Map<string, NormalizedQuote>()
+    for (const quote of aggregatedQuotes) {
+      quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
+    }
+
+    for (const carrierName of discoveredCarriers) {
+      const carrierPayload = await buildQuoteRequestPayload(
+        env,
+        order,
+        parcelResult.parcel,
+        carrierName,
+        requestedService
+      )
+
+      try {
+        const perCarrierResult = await quoteShipment(env, carrierPayload)
+        for (const quote of perCarrierResult.quotes) {
+          quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
+        }
+        if (!quoteResult?.payload && perCarrierResult.payload) {
+          quoteResult = perCarrierResult
+        }
+      } catch {
+        continue
+      }
+    }
+
+    aggregatedQuotes = [...quoteMap.values()].sort((left, right) => left.amount_cents - right.amount_cents)
+  }
+
+  const selected = selectQuote(aggregatedQuotes, payload)
   if (!selected) {
-    throw new Error('Envia no devolvio cotizaciones validas para este envio.')
+    const message = 'Envia no devolvio cotizaciones validas para este envio.'
+    await upsertShipmentRow(env, orderId, {
+      parcel_json: safeStringify(parcelResult.parcel),
+      envia_request_json: safeStringify(requestPayload),
+      envia_response_json: safeStringify(quoteResult.payload),
+      last_error: message
+    })
+    await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
+      requested_carrier: requestedCarrier,
+      requested_service: requestedService,
+      error: message,
+      payload: quoteResult.payload,
+      attempted_carriers: attemptedCarriers
+    })
+    throw new Error(message)
   }
 
   await upsertShipmentRow(env, orderId, {
@@ -4384,20 +4703,25 @@ async function quoteOrderShipment(
     carrier: selected.carrier,
     service: selected.service,
     envia_request_json: safeStringify(requestPayload),
-    envia_response_json: safeStringify(quoteResult.payload),
+    envia_response_json: safeStringify(selected.raw),
     last_error: null
   })
+  await updateOrderShippingStatus(
+    env,
+    orderId,
+    currentShipment ? normalizeWorkerShippingStatus(currentShipment.shipment_status) : 'pending'
+  )
 
   await insertShipmentEvent(env, orderId, 'quoted', 'admin', {
     selected_quote: selected,
-    quotes_count: quoteResult.quotes.length
+    quotes_count: aggregatedQuotes.length
   })
 
   const refreshed = await fetchOrderDetail(env, orderId)
   return {
     success: true,
     order: refreshed,
-    quotes: quoteResult.quotes,
+    quotes: aggregatedQuotes,
     selected_quote: selected
   }
 }
@@ -4488,6 +4812,44 @@ async function handleGetPendingShipments(
       request,
       env,
       { success: false, error: `Error obteniendo pendientes: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleGetShipmentOptions(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:options:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const url = new URL(request.url)
+    const country = cleanText(url.searchParams.get('country')) || 'MX'
+    const carrier = cleanText(url.searchParams.get('carrier'))
+    const [carriers, services] = await Promise.all([
+      listAvailableCarriers(env, country).catch(() => [] as string[]),
+      listAvailableServices(env, country, carrier).catch(() => [] as string[])
+    ])
+
+    return json(request, env, {
+      success: true,
+      country,
+      carrier: carrier || null,
+      carriers,
+      services
+    })
+  } catch (error) {
+    workerError(requestId, 'shipments:options:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error cargando opciones de Envia: ${getErrorMessage(error)}` },
       500
     )
   }
@@ -4658,7 +5020,7 @@ async function handleApproveShipmentByOrderId(
       throw new Error('No se pudo construir el paquete para este envio.')
     }
 
-    const labelPayload = buildLabelRequestPayload(env, order, parcel, selectedQuote)
+    const labelPayload = await buildLabelRequestPayload(env, order, parcel, selectedQuote)
     const created = await createShippingLabel(env, labelPayload)
     const normalizedStatus = normalizeWorkerShippingStatus(created.status || 'preparing')
     const labelKey = await storeShipmentLabel(env, orderId, created)
@@ -5184,6 +5546,15 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/shipments/pending') {
       const response = await handleGetPendingShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/shipments/options') {
+      const response = await handleGetShipmentOptions(request, env, requestId)
       workerLog(requestId, 'request:done', {
         status: response.status,
         elapsedMs: Date.now() - startedAt

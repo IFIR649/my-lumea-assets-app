@@ -150,6 +150,13 @@ type ShipmentQuoteResponse = {
   error?: string
 }
 
+type ShipmentOptionsResponse = {
+  success: boolean
+  carriers?: string[]
+  services?: string[]
+  error?: string
+}
+
 type ParcelForm = {
   weight_kg: string
   length_cm: string
@@ -166,10 +173,10 @@ const TOKEN_STORAGE_KEY = 'lumea_admin_api_token'
 const TOKEN_REMEMBER_KEY = 'lumea_admin_api_token_remember'
 
 const EMPTY_PARCEL_FORM: ParcelForm = {
-  weight_kg: '0.3',
-  length_cm: '18',
-  width_cm: '14',
-  height_cm: '6',
+  weight_kg: '1',
+  length_cm: '10',
+  width_cm: '10',
+  height_cm: '10',
   declared_value_cents: '',
   content: 'Joyeria Lumea Imperium',
   notes: '',
@@ -357,6 +364,8 @@ export default function ShipmentsManager(): React.JSX.Element {
   const [parcelForm, setParcelForm] = useState<ParcelForm>(EMPTY_PARCEL_FORM)
   const [quotes, setQuotes] = useState<QuoteOption[]>([])
   const [selectedQuote, setSelectedQuote] = useState<QuoteOption | null>(null)
+  const [availableCarriers, setAvailableCarriers] = useState<string[]>([])
+  const [availableServices, setAvailableServices] = useState<string[]>([])
   const [rejectReason, setRejectReason] = useState('')
   const [showApproveConfirm, setShowApproveConfirm] = useState(false)
 
@@ -389,6 +398,43 @@ export default function ShipmentsManager(): React.JSX.Element {
 
   const zipValidation = useMemo(() => getZipValidation(selectedOrder), [selectedOrder])
   const addressLines = useMemo(() => getAddressParts(selectedOrder), [selectedOrder])
+  const quoteCarrierOptions = useMemo(
+    () =>
+      [...new Set([...availableCarriers, ...quotes.map((quote) => quote.carrier)].filter(Boolean))].sort(),
+    [availableCarriers, quotes]
+  )
+  const quoteServiceOptions = useMemo(
+    () =>
+      [...new Set([...availableServices, ...quotes.map((quote) => quote.service)].filter(Boolean))].sort(),
+    [availableServices, quotes]
+  )
+
+  const loadEnviaOptions = async (
+    token = adminToken,
+    carrier = parcelForm.carrier.trim()
+  ): Promise<void> => {
+    if (!normalizeAdminToken(token)) {
+      setAvailableCarriers([])
+      setAvailableServices([])
+      return
+    }
+
+    const params = new URLSearchParams({ country: 'MX' })
+    if (carrier) params.set('carrier', carrier)
+    const response = await requestJson<ShipmentOptionsResponse>(
+      `/api/shipments/options?${params.toString()}`,
+      {
+        headers: buildAuthHeaders(token)
+      }
+    )
+
+    if (!response.success) {
+      throw new Error(response.error || 'No se pudieron cargar opciones de Envia.')
+    }
+
+    setAvailableCarriers(response.carriers || [])
+    setAvailableServices(response.services || [])
+  }
 
   const loadPending = async (token = adminToken): Promise<void> => {
     if (!normalizeAdminToken(token)) {
@@ -446,6 +492,8 @@ export default function ShipmentsManager(): React.JSX.Element {
       setParcelForm(parcelFormFromOrder(response.order))
       setQuotes([])
       setSelectedQuote(null)
+      setAvailableCarriers([])
+      setAvailableServices([])
       setRejectReason(response.order.shipment?.rejected_reason || '')
     } finally {
       setDetailLoading(false)
@@ -481,11 +529,22 @@ export default function ShipmentsManager(): React.JSX.Element {
       setParcelForm(EMPTY_PARCEL_FORM)
       setQuotes([])
       setSelectedQuote(null)
+      setAvailableCarriers([])
+      setAvailableServices([])
       return
     }
 
     void loadDetail(selectedOrderId)
   }, [selectedOrderId, adminToken])
+
+  useEffect(() => {
+    if (!selectedOrderId || !normalizeAdminToken(adminToken)) return
+
+    void loadEnviaOptions().catch(() => {
+      setAvailableCarriers([])
+      setAvailableServices([])
+    })
+  }, [selectedOrderId, adminToken, parcelForm.carrier])
 
   const submitQuotePayload = (): Record<string, string> => ({
     weight_kg: parcelForm.weight_kg.trim(),
@@ -1071,24 +1130,26 @@ export default function ShipmentsManager(): React.JSX.Element {
                     />
                   </label>
                   <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Carrier preferido</span>
+                    <span>Carrier preferido (opcional)</span>
                     <input
                       value={parcelForm.carrier}
                       onChange={(event) =>
                         setParcelForm((current) => ({ ...current, carrier: event.target.value }))
                       }
-                      placeholder="Se autoselecciona el mas barato"
+                      list="shipment-carrier-options"
+                      placeholder="Dejalo vacio para autoseleccionar el carrier mas barato"
                       className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
                     />
                   </label>
                   <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Servicio preferido</span>
+                    <span>Servicio preferido (opcional)</span>
                     <input
                       value={parcelForm.service}
                       onChange={(event) =>
                         setParcelForm((current) => ({ ...current, service: event.target.value }))
                       }
-                      placeholder="Opcional"
+                      list="shipment-service-options"
+                      placeholder="Dejalo vacio para autoseleccionar el servicio mas barato"
                       className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
                     />
                   </label>
@@ -1103,6 +1164,54 @@ export default function ShipmentsManager(): React.JSX.Element {
                     />
                   </label>
                 </div>
+
+                <datalist id="shipment-carrier-options">
+                  {quoteCarrierOptions.map((carrier) => (
+                    <option key={carrier} value={carrier} />
+                  ))}
+                </datalist>
+                <datalist id="shipment-service-options">
+                  {quoteServiceOptions.map((service) => (
+                    <option key={service} value={service} />
+                  ))}
+                </datalist>
+
+                <p className="mt-3 text-xs text-zinc-500">
+                  Si dejas ambos campos vacios, al cotizar se autoselecciona la opcion mas barata
+                  que Envia devuelva para este pedido. Despues de cotizar puedes elegir otra opcion
+                  desde “Cotizaciones sugeridas” o escribir manualmente un carrier/servicio.
+                </p>
+
+                <p className="mt-2 text-xs text-zinc-500">
+                  Los carriers y servicios visibles abajo salen desde Envia Queries. Si no escribes
+                  nada, el sistema usa automaticamente la opcion mas barata que Envia devuelva para
+                  este pedido.
+                </p>
+
+                {(availableCarriers.length > 0 || availableServices.length > 0) && (
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                        Carriers disponibles
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-300">
+                        {availableCarriers.length > 0
+                          ? availableCarriers.join(', ')
+                          : 'Envia no devolvio carriers para MX.'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                        Servicios disponibles
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-300">
+                        {availableServices.length > 0
+                          ? availableServices.join(', ')
+                          : 'Selecciona un carrier o cotiza para ver servicios.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <label className="mt-3 block space-y-2 text-xs text-zinc-400">
                   <span>Notas operativas</span>
