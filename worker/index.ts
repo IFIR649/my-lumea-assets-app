@@ -459,29 +459,143 @@ function getChangesFromRun(result: unknown): number {
   return typeof changes === 'number' ? changes : 0
 }
 
-async function getAssetUsageMap(env: Env, keys: string[]): Promise<Map<string, number>> {
-  if (!keys.length) return new Map()
+type AssetUsageProduct = {
+  product_id: number
+  title: string
+  slug: string
+  seo_slug: string | null
+  canonical_path: string
+  role: 'primary' | 'gallery'
+}
+
+type AssetUsageEntry = {
+  usage_count: number
+  usage_products: AssetUsageProduct[]
+}
+
+function buildUsageProduct(
+  row: Record<string, unknown>,
+  role: 'primary' | 'gallery'
+): AssetUsageProduct | null {
+  const productId = Number(row.product_id || 0)
+  const slug = String(row.slug || '').trim()
+  if (!productId || !slug) return null
+
+  const seoSlug = String(row.seo_slug || '').trim() || null
+
+  return {
+    product_id: productId,
+    title: String(row.title || '').trim() || slug,
+    slug,
+    seo_slug: seoSlug,
+    canonical_path: toCanonicalPath(slug, seoSlug),
+    role
+  }
+}
+
+function addAssetUsage(
+  usageMap: Map<string, Map<number, AssetUsageProduct>>,
+  key: string,
+  product: AssetUsageProduct
+): void {
+  const normalizedKey = String(key || '').trim()
+  if (!normalizedKey) return
+
+  const perKey = usageMap.get(normalizedKey) || new Map<number, AssetUsageProduct>()
+  const existing = perKey.get(product.product_id)
+  if (!existing || existing.role !== 'primary') {
+    perKey.set(product.product_id, product)
+  }
+  usageMap.set(normalizedKey, perKey)
+}
+
+async function getAssetUsageMap(env: Env, keys: string[]): Promise<Map<string, AssetUsageEntry>> {
+  const normalizedKeys = [...new Set(keys.map((key) => String(key || '').trim()).filter(Boolean))]
+  if (!normalizedKeys.length) return new Map()
 
   const columns = await existingColumns(env, 'products')
   if (!columns.has('image_key')) return new Map()
 
-  const placeholders = keys.map(() => '?').join(', ')
-  const result = await env.DB.prepare(
-    `SELECT image_key, COUNT(*) as count FROM products WHERE image_key IN (${placeholders}) GROUP BY image_key`
+  const usageByKey = new Map<string, Map<number, AssetUsageProduct>>()
+  const placeholders = normalizedKeys.map(() => '?').join(', ')
+  const galleryReady = await productImagesTableReady(env, 'assets-usage')
+
+  if (galleryReady) {
+    const galleryResult = await env.DB.prepare(
+      `SELECT
+         pi.image_key,
+         p.id AS product_id,
+         p.title,
+         p.slug,
+         p.seo_slug,
+         CASE
+           WHEN pi.position = 1 OR p.image_key = pi.image_key THEN 'primary'
+           ELSE 'gallery'
+         END AS role
+       FROM product_images pi
+       INNER JOIN products p ON p.id = pi.product_id
+       WHERE pi.image_key IN (${placeholders})
+       ORDER BY p.id ASC, pi.position ASC, pi.id ASC`
+    )
+      .bind(...normalizedKeys)
+      .all<Record<string, unknown>>()
+
+    for (const row of galleryResult.results || []) {
+      const key = String(row.image_key || '').trim()
+      const role = String(row.role || '').trim() === 'primary' ? 'primary' : 'gallery'
+      const product = buildUsageProduct(row, role)
+      if (!product) continue
+      addAssetUsage(usageByKey, key, product)
+    }
+  }
+
+  const legacyWhere = galleryReady
+    ? `p.image_key IN (${placeholders})
+       AND NOT EXISTS (
+         SELECT 1
+         FROM product_images pi
+         WHERE pi.product_id = p.id
+           AND pi.image_key = p.image_key
+       )`
+    : `p.image_key IN (${placeholders})`
+
+  const legacyResult = await env.DB.prepare(
+    `SELECT
+       p.image_key,
+       p.id AS product_id,
+       p.title,
+       p.slug,
+       p.seo_slug
+     FROM products p
+     WHERE ${legacyWhere}
+     ORDER BY p.id ASC`
   )
-    .bind(...keys)
-    .all<{ image_key: string | null; count: number }>()
+    .bind(...normalizedKeys)
+    .all<Record<string, unknown>>()
+
+  for (const row of legacyResult.results || []) {
+    const key = String(row.image_key || '').trim()
+    const product = buildUsageProduct(row, 'primary')
+    if (!product) continue
+    addAssetUsage(usageByKey, key, product)
+  }
 
   return new Map(
-    (result.results || [])
-      .map((row) => [String(row.image_key || ''), Number(row.count || 0)] as const)
-      .filter(([key]) => Boolean(key))
+    [...usageByKey.entries()].map(([key, productMap]) => [
+      key,
+      {
+        usage_count: productMap.size,
+        usage_products: [...productMap.values()].sort((left, right) =>
+          left.title.localeCompare(right.title, 'es-MX', { sensitivity: 'base' })
+        )
+      } satisfies AssetUsageEntry
+    ])
   )
 }
 
 async function getAssetUsageCount(env: Env, key: string): Promise<number> {
   const usageMap = await getAssetUsageMap(env, [key])
-  return usageMap.get(key) || 0
+  return usageMap.get(key)?.usage_count || 0
 }
 
 function getProductIdFromPath(pathname: string): number | null {
@@ -3348,7 +3462,8 @@ async function handleListAssets(request: Request, env: Env, requestId: string): 
     )
 
     const assets = (listing.objects || []).map((object) => {
-      const usageCount = usageMap.get(object.key) || 0
+      const usageEntry = usageMap.get(object.key)
+      const usageCount = usageEntry?.usage_count || 0
       const uploadedAt =
         object.uploaded instanceof Date
           ? object.uploaded.toISOString()
@@ -3364,6 +3479,7 @@ async function handleListAssets(request: Request, env: Env, requestId: string): 
         uploaded_at: uploadedAt,
         content_type: object.httpMetadata?.contentType || null,
         usage_count: usageCount,
+        usage_products: usageEntry?.usage_products || [],
         can_delete: usageCount === 0
       }
     })

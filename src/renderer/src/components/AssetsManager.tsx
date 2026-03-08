@@ -31,6 +31,15 @@ type QueueItem = ImageRecord & {
   uploadError: string | null
 }
 
+type AssetUsageProduct = {
+  product_id: number
+  title: string
+  slug: string
+  seo_slug: string | null
+  canonical_path: string
+  role: 'primary' | 'gallery'
+}
+
 type AssetItem = {
   key: string
   url: string
@@ -39,6 +48,7 @@ type AssetItem = {
   uploaded_at: string | null
   content_type: string | null
   usage_count: number
+  usage_products?: AssetUsageProduct[]
   can_delete: boolean
 }
 
@@ -77,6 +87,64 @@ function formatDate(value: string | null): string {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(date)
+}
+
+function splitFileName(name: string): { baseName: string; extension: string } {
+  const normalized = String(name || '').trim()
+  const dotIndex = normalized.lastIndexOf('.')
+  if (dotIndex <= 0) {
+    return { baseName: normalized || 'asset', extension: '' }
+  }
+
+  return {
+    baseName: normalized.slice(0, dotIndex) || 'asset',
+    extension: normalized.slice(dotIndex + 1).toLowerCase()
+  }
+}
+
+function buildFileName(baseName: string, extension: string): string {
+  const normalizedBaseName =
+    String(baseName || '')
+      .trim()
+      .replace(/\.(webp|png|jpe?g)$/i, '') || 'asset'
+  const normalizedExtension = String(extension || '').trim().replace(/^\.+/, '').toLowerCase()
+  return normalizedExtension ? `${normalizedBaseName}.${normalizedExtension}` : normalizedBaseName
+}
+
+function renameFile(file: File, nextName: string): File {
+  return new File([file], nextName, {
+    type: file.type,
+    lastModified: Date.now()
+  })
+}
+
+function isQueueItemWebpReady(item: QueueItem): boolean {
+  const { extension } = splitFileName(item.name)
+  return (
+    extension === 'webp' ||
+    item.file.type === 'image/webp' ||
+    item.optimization?.outputType === 'image/webp'
+  )
+}
+
+function canEditQueueItemName(item: QueueItem): boolean {
+  return isQueueItemWebpReady(item) && item.uploadStatus !== 'uploading' && item.uploadStatus !== 'uploaded'
+}
+
+function usageRoleLabel(role: AssetUsageProduct['role']): string {
+  return role === 'primary' ? 'Portada' : 'Galeria'
+}
+
+function formatUsageSummary(usageProducts: AssetUsageProduct[] | undefined, maxItems = 3): string {
+  const items = Array.isArray(usageProducts) ? usageProducts : []
+  if (!items.length) return ''
+
+  const visible = items
+    .slice(0, maxItems)
+    .map((product) => `${product.title} (${usageRoleLabel(product.role)})`)
+  const remaining = items.length - visible.length
+
+  return remaining > 0 ? `${visible.join(', ')} +${remaining} mas` : visible.join(', ')
 }
 
 function toQueueItem(file: File): QueueItem {
@@ -193,6 +261,11 @@ export default function AssetsManager(): React.JSX.Element {
   const [assetActionKey, setAssetActionKey] = useState<string | null>(null)
 
   const selectedQueueItem = queue.find((item) => item.id === selectedQueueId) ?? null
+  const selectedQueueNameParts = useMemo(
+    () => splitFileName(selectedQueueItem?.name || ''),
+    [selectedQueueItem?.name]
+  )
+  const selectedQueueCanRename = selectedQueueItem ? canEditQueueItemName(selectedQueueItem) : false
   const uploadedCount = useMemo(
     () => queue.filter((item) => item.uploadStatus === 'uploaded').length,
     [queue]
@@ -342,6 +415,27 @@ export default function AssetsManager(): React.JSX.Element {
     setMsg({ type: 'info', text: `Prefijo activo: ${normalized}` })
   }
 
+  const updateQueueItemBaseName = (itemId: string, nextBaseName: string): void => {
+    setQueue((items) =>
+      items.map((item) => {
+        if (item.id !== itemId) return item
+        if (!canEditQueueItemName(item)) return item
+
+        const currentParts = splitFileName(item.name)
+        const nextName = buildFileName(nextBaseName || currentParts.baseName, 'webp')
+
+        return {
+          ...item,
+          name: nextName,
+          file: renameFile(item.file, nextName),
+          uploadedKey: null,
+          uploadedUrl: null,
+          uploadError: null
+        }
+      })
+    )
+  }
+
   const optimizeQueueItem = async (itemId: string, silent = false): Promise<boolean> => {
     const currentItem = queueRef.current.find((item) => item.id === itemId)
     if (!currentItem) return false
@@ -351,6 +445,12 @@ export default function AssetsManager(): React.JSX.Element {
     try {
       const optimizedFile = await optimizeImageFile(currentItem.file)
       const optimizedSize = optimizedFile.size
+      const desiredBaseName = splitFileName(currentItem.name).baseName
+      const nextOptimizedName = buildFileName(desiredBaseName, 'webp')
+      const namedOptimizedFile =
+        optimizedFile.name === nextOptimizedName
+          ? optimizedFile
+          : renameFile(optimizedFile, nextOptimizedName)
 
       if (optimizedSize >= currentItem.size) {
         if (!silent) {
@@ -372,9 +472,9 @@ export default function AssetsManager(): React.JSX.Element {
           URL.revokeObjectURL(item.url)
           return {
             ...item,
-            name: optimizedFile.name,
-            file: optimizedFile,
-            url: URL.createObjectURL(optimizedFile),
+            name: nextOptimizedName,
+            file: namedOptimizedFile,
+            url: URL.createObjectURL(namedOptimizedFile),
             size: optimizedSize,
             optimization: {
               optimizedSize,
@@ -733,6 +833,38 @@ export default function AssetsManager(): React.JSX.Element {
                         {queueStatusLabel(selectedQueueItem.uploadStatus)}
                       </span>
                     </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
+                        Nombre de upload
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          value={selectedQueueNameParts.baseName}
+                          onChange={(event) =>
+                            selectedQueueItem
+                              ? updateQueueItemBaseName(selectedQueueItem.id, event.target.value)
+                              : undefined
+                          }
+                          readOnly={!selectedQueueCanRename}
+                          className={cn(
+                            'min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm',
+                            selectedQueueCanRename
+                              ? 'border-white/10 bg-surface100 text-zinc-100'
+                              : 'cursor-not-allowed border-white/5 bg-black/20 text-zinc-400'
+                          )}
+                        />
+                        <span className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300">
+                          {selectedQueueNameParts.extension ? `.${selectedQueueNameParts.extension}` : 'sin ext'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-500">
+                        {selectedQueueCanRename
+                          ? 'Puedes editar el basename. La extension .webp se mantiene fija.'
+                          : isQueueItemWebpReady(selectedQueueItem)
+                            ? 'El rename queda bloqueado mientras se sube o despues de subir.'
+                            : 'Optimiza a WebP para habilitar el rename con extension fija .webp.'}
+                      </p>
+                    </div>
                     <p className="text-xs text-zinc-500">
                       Peso original: {fmtSize(selectedQueueItem.originalSize)}
                     </p>
@@ -963,9 +1095,15 @@ export default function AssetsManager(): React.JSX.Element {
                               : 'border-amber-400/30 bg-amber-500/10 text-amber-200'
                           )}
                         >
-                          {asset.can_delete ? 'Libre' : `En uso (${asset.usage_count})`}
+                          {asset.can_delete ? 'Libre' : `Usado en ${asset.usage_count}`}
                         </span>
                       </div>
+                      {asset.usage_count > 0 && (
+                        <div className="rounded-xl border border-amber-400/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
+                          <span className="font-semibold">Usado en:</span>{' '}
+                          <span>{formatUsageSummary(asset.usage_products)}</span>
+                        </div>
+                      )}
                       <div className="grid gap-1 text-xs text-zinc-500">
                         <p>Tamano: {fmtSize(asset.size)}</p>
                         <p>Subido: {formatDate(asset.uploaded_at)}</p>
