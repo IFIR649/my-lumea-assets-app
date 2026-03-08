@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from './lib/utils'
 import OrdersManager from './components/OrdersManager'
+import ShipmentsManager from './components/ShipmentsManager'
 import VariantsManager from './components/VariantsManager'
 import ReviewsManager from './components/ReviewsManager'
 import AssetsManager from './components/AssetsManager'
@@ -29,7 +30,15 @@ import {
   type ImageRecord
 } from './lib/image-tools'
 
-type View = 'create' | 'assets' | 'products' | 'variants' | 'reviews' | 'orders' | 'connections'
+type View =
+  | 'create'
+  | 'assets'
+  | 'products'
+  | 'variants'
+  | 'reviews'
+  | 'orders'
+  | 'shipments'
+  | 'connections'
 type Msg = { type: 'error' | 'success' | 'info'; text: string } | null
 
 type ProductImage = {
@@ -91,12 +100,23 @@ type SchemaHealth = {
   products_enriched: boolean
   product_variants: boolean
   product_reviews: boolean
+  order_shipments: boolean
+}
+
+type EnviaHealth = {
+  configured: boolean
+  mode: 'test' | 'prod'
+  shipping: { ok: boolean; error: string | null }
+  queries: { ok: boolean; error: string | null }
+  geocodes: { ok: boolean; error: string | null }
+  checked_at: string
 }
 
 type ConnectionStatus = {
   r2: { ok: boolean; error: string | null }
   d1: { ok: boolean; error: string | null }
   schema: SchemaHealth
+  envia: EnviaHealth
   checking: boolean
 }
 
@@ -390,13 +410,23 @@ function App(): React.JSX.Element {
     schema: {
       products_enriched: false,
       product_variants: false,
-      product_reviews: false
+      product_reviews: false,
+      order_shipments: false
+    },
+    envia: {
+      configured: false,
+      mode: 'test',
+      shipping: { ok: false, error: null },
+      queries: { ok: false, error: null },
+      geocodes: { ok: false, error: null },
+      checked_at: ''
     },
     checking: true
   })
 
   const selectedImage = images.find((x) => x.id === selectedImageId) ?? null
   const connected = conn.r2.ok && conn.d1.ok
+  const apiProxyTarget = import.meta.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8787'
   const productOptions = useMemo(
     () => products.map((product) => ({ id: product.id, title: product.title, slug: product.slug })),
     [products]
@@ -431,6 +461,7 @@ function App(): React.JSX.Element {
         r2: { ok: boolean; error: string | null }
         d1: { ok: boolean; error: string | null }
         schema?: Partial<SchemaHealth>
+        envia?: Partial<EnviaHealth>
       }>('/api/health', undefined, 12000)
       setConn({
         r2: status.r2,
@@ -438,7 +469,25 @@ function App(): React.JSX.Element {
         schema: {
           products_enriched: Boolean(status.schema?.products_enriched),
           product_variants: Boolean(status.schema?.product_variants),
-          product_reviews: Boolean(status.schema?.product_reviews)
+          product_reviews: Boolean(status.schema?.product_reviews),
+          order_shipments: Boolean(status.schema?.order_shipments)
+        },
+        envia: {
+          configured: Boolean(status.envia?.configured),
+          mode: status.envia?.mode === 'prod' ? 'prod' : 'test',
+          shipping: {
+            ok: Boolean(status.envia?.shipping?.ok),
+            error: status.envia?.shipping?.error || null
+          },
+          queries: {
+            ok: Boolean(status.envia?.queries?.ok),
+            error: status.envia?.queries?.error || null
+          },
+          geocodes: {
+            ok: Boolean(status.envia?.geocodes?.ok),
+            error: status.envia?.geocodes?.error || null
+          },
+          checked_at: status.envia?.checked_at || ''
         },
         checking: false
       })
@@ -450,7 +499,16 @@ function App(): React.JSX.Element {
         schema: {
           products_enriched: false,
           product_variants: false,
-          product_reviews: false
+          product_reviews: false,
+          order_shipments: false
+        },
+        envia: {
+          configured: false,
+          mode: 'test',
+          shipping: { ok: false, error: text },
+          queries: { ok: false, error: text },
+          geocodes: { ok: false, error: text },
+          checked_at: ''
         },
         checking: false
       })
@@ -1278,20 +1336,30 @@ function App(): React.JSX.Element {
           </button>
         </div>
         <nav className="flex gap-2 overflow-x-auto border-t border-white/5 px-3 py-2 sm:px-6">
-          {(['create', 'assets', 'products', 'variants', 'reviews', 'orders', 'connections'] as View[]).map(
-            (v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={cn(
-                  'rounded-lg px-3 py-2 text-xs font-semibold',
-                  view === v ? 'bg-brand text-black' : 'bg-white/5 text-zinc-300'
-                )}
-              >
-                {v === 'create'
-                  ? 'Crear'
-                  : v === 'assets'
-                    ? 'Assets'
+          {(
+            [
+              'create',
+              'assets',
+              'products',
+              'variants',
+              'reviews',
+              'orders',
+              'shipments',
+              'connections'
+            ] as View[]
+          ).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={cn(
+                'rounded-lg px-3 py-2 text-xs font-semibold',
+                view === v ? 'bg-brand text-black' : 'bg-white/5 text-zinc-300'
+              )}
+            >
+              {v === 'create'
+                ? 'Crear'
+                : v === 'assets'
+                  ? 'Assets'
                   : v === 'products'
                     ? 'Productos'
                     : v === 'variants'
@@ -1300,10 +1368,11 @@ function App(): React.JSX.Element {
                         ? 'Resenas'
                         : v === 'orders'
                           ? 'Pedidos'
-                          : 'Conexiones'}
-              </button>
-            )
-          )}
+                          : v === 'shipments'
+                            ? 'Envios'
+                            : 'Conexiones'}
+            </button>
+          ))}
         </nav>
       </header>
 
@@ -2216,17 +2285,20 @@ function App(): React.JSX.Element {
 
         {view === 'orders' && <OrdersManager />}
 
+        {view === 'shipments' && <ShipmentsManager />}
+
         {view === 'connections' && (
           <div className="mx-auto w-full max-w-5xl space-y-4">
             <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
               <h2 className="text-xl font-semibold">Conexiones</h2>
               <p className="mt-2 text-sm text-zinc-500">URL actual: {window.location.origin}</p>
+              <p className="mt-2 text-sm text-zinc-500">API actual: {apiProxyTarget}</p>
               <p className="mt-2 text-sm text-zinc-500">
                 Estado health:{' '}
                 {conn.checking ? 'verificando...' : connected ? 'OK' : 'con incidencias'}
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
                 <p className="text-xs uppercase text-zinc-500">R2</p>
                 <p
@@ -2251,10 +2323,55 @@ function App(): React.JSX.Element {
                 </p>
                 {conn.d1.error && <p className="mt-2 text-xs text-zinc-400">{conn.d1.error}</p>}
               </div>
+              <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase text-zinc-500">Envia</p>
+                    <p
+                      className={cn(
+                        'mt-2 text-sm font-semibold',
+                        conn.envia.configured &&
+                          conn.envia.shipping.ok &&
+                          conn.envia.queries.ok &&
+                          conn.envia.geocodes.ok
+                          ? 'text-emerald-300'
+                          : 'text-amber-300'
+                      )}
+                    >
+                      {conn.envia.configured ? `Modo ${conn.envia.mode}` : 'Sin configurar'}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] text-zinc-400">
+                    {conn.envia.checked_at || 'sin check'}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2 text-xs text-zinc-400">
+                  <p>
+                    Shipping:{' '}
+                    <span className={conn.envia.shipping.ok ? 'text-emerald-300' : 'text-rose-300'}>
+                      {conn.envia.shipping.ok ? 'ok' : conn.envia.shipping.error || 'error'}
+                    </span>
+                  </p>
+                  <p>
+                    Queries:{' '}
+                    <span className={conn.envia.queries.ok ? 'text-emerald-300' : 'text-rose-300'}>
+                      {conn.envia.queries.ok ? 'ok' : conn.envia.queries.error || 'error'}
+                    </span>
+                  </p>
+                  <p>
+                    Geocodes:{' '}
+                    <span
+                      className={conn.envia.geocodes.ok ? 'text-emerald-300' : 'text-rose-300'}
+                    >
+                      {conn.envia.geocodes.ok ? 'ok' : conn.envia.geocodes.error || 'error'}
+                    </span>
+                  </p>
+                </div>
+              </div>
             </div>
             <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
               <p className="text-xs uppercase text-zinc-500">Compatibilidad de esquema</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="mt-3 grid gap-2 sm:grid-cols-4">
                 <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
                   products_enriched:{' '}
                   <span
@@ -2277,6 +2394,14 @@ function App(): React.JSX.Element {
                     className={conn.schema.product_reviews ? 'text-emerald-300' : 'text-rose-300'}
                   >
                     {conn.schema.product_reviews ? 'listo' : 'pendiente'}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                  order_shipments:{' '}
+                  <span
+                    className={conn.schema.order_shipments ? 'text-emerald-300' : 'text-rose-300'}
+                  >
+                    {conn.schema.order_shipments ? 'listo' : 'pendiente'}
                   </span>
                 </div>
               </div>

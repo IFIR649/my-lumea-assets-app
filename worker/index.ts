@@ -1,9 +1,45 @@
+import {
+  createShippingLabel,
+  downloadLabelBinary,
+  pingEnviaApis,
+  quoteShipment,
+  trackShipment,
+  type EnviaHealthStatus,
+  type NormalizedQuote,
+  type NormalizedShipmentResult,
+  normalizeTrackingResult
+} from './envia'
+
 interface Env {
   DB: D1Database
   ASSETS_BUCKET: R2Bucket
   R2_PUBLIC_BASE_URL?: string
   CORS_ORIGIN?: string
   ADMIN_API_TOKEN?: string
+  ENVIA_MODE?: string
+  ENVIA_API_KEY?: string
+  ENVIA_SHIPPING_BASE_URL?: string
+  ENVIA_QUERIES_BASE_URL?: string
+  ENVIA_GEOCODES_BASE_URL?: string
+  ENVIA_TIMEOUT_MS?: string
+  ENVIA_WEBHOOK_TOKEN?: string
+  ENVIA_FROM_NAME?: string
+  ENVIA_FROM_COMPANY?: string
+  ENVIA_FROM_PHONE?: string
+  ENVIA_FROM_EMAIL?: string
+  ENVIA_FROM_STREET?: string
+  ENVIA_FROM_NUMBER?: string
+  ENVIA_FROM_DISTRICT?: string
+  ENVIA_FROM_CITY?: string
+  ENVIA_FROM_STATE?: string
+  ENVIA_FROM_ZIP?: string
+  ENVIA_FROM_COUNTRY?: string
+  ENVIA_DEFAULT_WEIGHT_KG?: string
+  ENVIA_DEFAULT_LENGTH_CM?: string
+  ENVIA_DEFAULT_WIDTH_CM?: string
+  ENVIA_DEFAULT_HEIGHT_CM?: string
+  ENVIA_DEFAULT_CONTENT?: string
+  ENVIA_ALLOWED_CARRIERS?: string
 }
 
 type ProductRow = {
@@ -183,6 +219,7 @@ type ProductTypeRow = {
 }
 
 type ShippingStatus = 'pending' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled' | 'lost'
+type ShipmentApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 type DisplayStatus =
   | 'cancelado'
@@ -260,6 +297,85 @@ type OrderUpdatePayload = {
   internal_note?: string | null
 }
 
+type OrderShipmentRow = {
+  order_id: string
+  provider: string
+  mode: string
+  approval_status: ShipmentApprovalStatus
+  shipment_status: ShippingStatus
+  carrier: string | null
+  service: string | null
+  tracking_number: string | null
+  tracking_url: string | null
+  envia_shipment_id: string | null
+  label_r2_key: string | null
+  quote_amount_cents: number | null
+  currency: string
+  parcel_json: string | null
+  address_validation_json: string | null
+  envia_request_json: string | null
+  envia_response_json: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  rejected_reason: string | null
+  last_sync_at: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+type OrderShipmentEventRow = {
+  id: number
+  order_id: string
+  event_type: string
+  source: string
+  payload_json: string | null
+  created_at: string
+}
+
+type ShipmentListRow = {
+  id: string
+  created_at: string
+  updated_at: string
+  customer_name: string | null
+  customer_email: string
+  customer_phone: string | null
+  total_amount_cents: number
+  currency: string
+  approval_status: ShipmentApprovalStatus
+  shipment_status: ShippingStatus
+  carrier: string | null
+  service: string | null
+  tracking_number: string | null
+  tracking_url: string | null
+  label_r2_key: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  rejected_reason: string | null
+  last_sync_at: string | null
+  last_error: string | null
+}
+
+type ShipmentListFilters = {
+  status: ShippingStatus | ''
+}
+
+type ShipmentQuotePayload = {
+  weight_kg?: number | string | null
+  length_cm?: number | string | null
+  width_cm?: number | string | null
+  height_cm?: number | string | null
+  declared_value_cents?: number | string | null
+  content?: string | null
+  notes?: string | null
+  carrier?: string | null
+  service?: string | null
+}
+
+type ShipmentRejectPayload = {
+  reason?: string | null
+}
+
 const DEFAULT_PRODUCT_TYPES: Array<{ type: string; sort: number }> = [
   { type: 'ring', sort: 100 },
   { type: 'necklace', sort: 90 },
@@ -272,8 +388,11 @@ const DEFAULT_PRODUCT_TYPES: Array<{ type: string; sort: number }> = [
 let ensureTypesCatalogPromise: Promise<void> | null = null
 let ensureOrdersAdminSchemaPromise: Promise<void> | null = null
 let ensureProductImagesSchemaPromise: Promise<void> | null = null
+let ensureOrderShipmentsSchemaPromise: Promise<void> | null = null
 const tableColumnsCache = new Map<string, Set<string>>()
 const tableExistsCache = new Map<string, boolean>()
+const ENVIA_HEALTH_TTL_MS = 60_000
+let enviaHealthCache: { status: EnviaHealthStatus; expiresAt: number } | null = null
 
 const PRODUCT_BASE_COLUMNS = [
   'id',
@@ -348,6 +467,33 @@ const PRODUCT_IMAGE_REQUIRED_COLUMNS = [
   'image_key',
   'alt_text',
   'created_at'
+] as const
+
+const ORDER_SHIPMENT_REQUIRED_COLUMNS = [
+  'order_id',
+  'provider',
+  'mode',
+  'approval_status',
+  'shipment_status',
+  'carrier',
+  'service',
+  'tracking_number',
+  'tracking_url',
+  'envia_shipment_id',
+  'label_r2_key',
+  'quote_amount_cents',
+  'currency',
+  'parcel_json',
+  'address_validation_json',
+  'envia_request_json',
+  'envia_response_json',
+  'approved_at',
+  'rejected_at',
+  'rejected_reason',
+  'last_sync_at',
+  'last_error',
+  'created_at',
+  'updated_at'
 ] as const
 
 const SHIPPING_STATUS_VALUES = [
@@ -661,6 +807,23 @@ function getOrderIdFromPath(pathname: string): string | null {
   if (!match) return null
   const decoded = decodeURIComponent(match[1] || '').trim()
   return decoded || null
+}
+
+function getShipmentOrderIdFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/shipments\/([^/]+)$/)
+  if (!match) return null
+  const decoded = decodeURIComponent(match[1] || '').trim()
+  return decoded || null
+}
+
+function getShipmentActionRoute(
+  pathname: string
+): { orderId: string; action: 'quote' | 'approve' | 'reject' | 'sync' } | null {
+  const match = pathname.match(/^\/api\/shipments\/([^/]+)\/(quote|approve|reject|sync)$/)
+  if (!match) return null
+  const orderId = decodeURIComponent(match[1] || '').trim()
+  const action = match[2] as 'quote' | 'approve' | 'reject' | 'sync'
+  return orderId ? { orderId, action } : null
 }
 
 function normalizeType(value: unknown): string {
@@ -1020,6 +1183,219 @@ async function ensureOrdersAdminSchema(env: Env, requestId: string): Promise<voi
   }
 
   await ensureOrdersAdminSchemaPromise
+}
+
+async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<void> {
+  if (!ensureOrderShipmentsSchemaPromise) {
+    ensureOrderShipmentsSchemaPromise = (async () => {
+      workerLog(requestId, 'shipments:schema:start')
+      clearTableMetadataCache('order_shipments')
+      clearTableMetadataCache('order_shipment_events')
+
+      await env.DB.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS order_shipments (
+          order_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL DEFAULT 'envia',
+          mode TEXT NOT NULL DEFAULT 'test',
+          approval_status TEXT NOT NULL DEFAULT 'pending',
+          shipment_status TEXT NOT NULL DEFAULT 'pending',
+          carrier TEXT,
+          service TEXT,
+          tracking_number TEXT,
+          tracking_url TEXT,
+          envia_shipment_id TEXT,
+          label_r2_key TEXT,
+          quote_amount_cents INTEGER,
+          currency TEXT NOT NULL DEFAULT 'MXN',
+          parcel_json TEXT,
+          address_validation_json TEXT,
+          envia_request_json TEXT,
+          envia_response_json TEXT,
+          approved_at TEXT,
+          rejected_at TEXT,
+          rejected_reason TEXT,
+          last_sync_at TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+        )
+        `
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipments_approval_status
+         ON order_shipments(approval_status, shipment_status, created_at DESC)`
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipments_tracking_number
+         ON order_shipments(tracking_number)`
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipments_envia_shipment_id
+         ON order_shipments(envia_shipment_id)`
+      ).run()
+
+      await env.DB.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS order_shipment_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          source TEXT NOT NULL,
+          payload_json TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+        )
+        `
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipment_events_order
+         ON order_shipment_events(order_id, created_at DESC)`
+      ).run()
+
+      await env.DB.prepare(
+        `
+          INSERT INTO order_shipments (
+            order_id,
+            provider,
+            mode,
+            approval_status,
+            shipment_status,
+            currency,
+            parcel_json,
+            created_at,
+            updated_at
+          )
+          SELECT
+            o.id,
+            'envia',
+            'test',
+            'pending',
+            COALESCE(o.shipping_status, 'pending'),
+            COALESCE(o.currency, 'MXN'),
+            json_object(
+              'weight_kg', NULL,
+              'length_cm', NULL,
+              'width_cm', NULL,
+              'height_cm', NULL,
+              'declared_value_cents', COALESCE(o.total_amount_cents, 0),
+              'content', 'Joyeria Lumea Imperium',
+              'notes', NULL
+            ),
+            o.created_at,
+            o.updated_at
+          FROM orders o
+          WHERE o.status <> 'unpaid'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM order_shipments os
+              WHERE os.order_id = o.id
+            )
+        `
+      ).run()
+
+      clearTableMetadataCache('order_shipments')
+      clearTableMetadataCache('order_shipment_events')
+      workerLog(requestId, 'shipments:schema:done')
+    })().catch((error) => {
+      ensureOrderShipmentsSchemaPromise = null
+      throw error
+    })
+  }
+
+  await ensureOrderShipmentsSchemaPromise
+}
+
+function safeParseJson(value: string | null): unknown {
+  if (!value) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function safeStringify(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
+function toObjectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function cleanText(value: unknown): string | null {
+  const normalized = String(value || '').trim()
+  return normalized || null
+}
+
+function parsePositiveFloat(value: unknown, fallback: number | null = null): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.round(parsed * 1000) / 1000
+}
+
+function parseNonNegativeCents(value: unknown, fallback: number | null = null): number | null {
+  if (value === null || value === undefined || value === '') return fallback
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback
+  return Math.round(parsed)
+}
+
+function parseShipmentApprovalStatus(value: unknown): ShipmentApprovalStatus {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'approved') return 'approved'
+  if (normalized === 'rejected') return 'rejected'
+  return 'pending'
+}
+
+function normalizeWorkerShippingStatus(value: unknown): ShippingStatus {
+  return normalizeShippingStatus(value) || 'pending'
+}
+
+function toOrderShipment(
+  row: OrderShipmentRow | null | undefined,
+  env: Env
+): null | Record<string, unknown> {
+  if (!row?.order_id) return null
+  return {
+    order_id: row.order_id,
+    provider: row.provider || 'envia',
+    mode: row.mode || 'test',
+    approval_status: parseShipmentApprovalStatus(row.approval_status),
+    shipment_status: normalizeWorkerShippingStatus(row.shipment_status),
+    carrier: row.carrier || null,
+    service: row.service || null,
+    tracking_number: row.tracking_number || null,
+    tracking_url: row.tracking_url || null,
+    envia_shipment_id: row.envia_shipment_id || null,
+    label_r2_key: row.label_r2_key || null,
+    label_url: row.label_r2_key ? buildAssetUrl(env, row.label_r2_key) : null,
+    quote_amount_cents: row.quote_amount_cents == null ? null : Number(row.quote_amount_cents || 0),
+    currency: row.currency || 'MXN',
+    parcel: safeParseJson(row.parcel_json),
+    address_validation: safeParseJson(row.address_validation_json),
+    envia_request: safeParseJson(row.envia_request_json),
+    envia_response: safeParseJson(row.envia_response_json),
+    approved_at: row.approved_at || null,
+    rejected_at: row.rejected_at || null,
+    rejected_reason: row.rejected_reason || null,
+    last_sync_at: row.last_sync_at || null,
+    last_error: row.last_error || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  }
 }
 
 function assertAdminToken(
@@ -1607,14 +1983,35 @@ function buildUpdateStatement(
 async function handleHealth(request: Request, env: Env, requestId: string): Promise<Response> {
   const startedAt = Date.now()
   workerLog(requestId, 'health:start')
-  const status = {
+  const status: {
+    r2: { ok: boolean; error: string | null }
+    d1: { ok: boolean; error: string | null }
+    schema: {
+      products_enriched: boolean
+      product_variants: boolean
+      product_reviews: boolean
+      order_shipments: boolean
+    }
+    envia: EnviaHealthStatus
+  } = {
     r2: { ok: true, error: null as string | null },
     d1: { ok: true, error: null as string | null },
     schema: {
       products_enriched: false,
       product_variants: false,
-      product_reviews: false
-    }
+      product_reviews: false,
+      order_shipments: false
+    },
+    envia: {
+      configured: false,
+      mode: (String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test') as
+        | 'test'
+        | 'prod',
+      shipping: { ok: false, error: 'Envia no verificado.' as string | null },
+      queries: { ok: false, error: 'Envia no verificado.' as string | null },
+      geocodes: { ok: false, error: 'Envia no verificado.' as string | null },
+      checked_at: new Date().toISOString()
+    } satisfies EnviaHealthStatus
   }
 
   try {
@@ -1640,6 +2037,11 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
       8000,
       'D1 product_images schema ensure'
     )
+    await withTimeout(
+      ensureOrderShipmentsSchema(env, requestId),
+      8000,
+      'D1 order_shipments schema ensure'
+    )
 
     const productColumns = await existingColumns(env, 'products')
     status.schema.products_enriched = PRODUCT_ENRICHED_HEALTH_COLUMNS.every((column) =>
@@ -1655,11 +2057,90 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
       'product_reviews',
       REVIEW_REQUIRED_COLUMNS
     )
+    status.schema.order_shipments = await tableHasRequiredColumns(
+      env,
+      'order_shipments',
+      ORDER_SHIPMENT_REQUIRED_COLUMNS
+    )
   } catch (error) {
     workerError(requestId, 'health:d1:error', error)
     status.d1 = {
       ok: false,
       error: `Fallo en D1: ${getErrorMessage(error)}`
+    }
+  }
+
+  try {
+    if (enviaHealthCache && enviaHealthCache.expiresAt > Date.now()) {
+      status.envia = enviaHealthCache.status
+    } else {
+      status.envia = await withTimeout(
+        pingEnviaApis(env, {
+          originZip: String(env.ENVIA_FROM_ZIP || '64000').trim() || '64000',
+          dryRunPayload: {
+            origin: {
+              name:
+                String(env.ENVIA_FROM_NAME || env.ENVIA_FROM_COMPANY || 'Lumea Imperium').trim() ||
+                'Lumea Imperium',
+              company: String(env.ENVIA_FROM_COMPANY || 'Lumea Imperium').trim() || 'Lumea Imperium',
+              email: String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
+              phone: String(env.ENVIA_FROM_PHONE || '8181818181').trim() || '8181818181',
+              street: String(env.ENVIA_FROM_STREET || 'Av Fundidora').trim() || 'Av Fundidora',
+              number: String(env.ENVIA_FROM_NUMBER || '100').trim() || '100',
+              district: String(env.ENVIA_FROM_DISTRICT || 'Centro').trim() || 'Centro',
+              city: String(env.ENVIA_FROM_CITY || 'Monterrey').trim() || 'Monterrey',
+              state: String(env.ENVIA_FROM_STATE || 'NL').trim() || 'NL',
+              postal_code: String(env.ENVIA_FROM_ZIP || '64000').trim() || '64000',
+              country: String(env.ENVIA_FROM_COUNTRY || 'MX').trim() || 'MX'
+            },
+            destination: {
+              name: 'Health Check',
+              company: 'Health Check',
+              email: String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
+              phone: String(env.ENVIA_FROM_PHONE || '8181818181').trim() || '8181818181',
+              street: String(env.ENVIA_FROM_STREET || 'Av Fundidora').trim() || 'Av Fundidora',
+              number: String(env.ENVIA_FROM_NUMBER || '100').trim() || '100',
+              district: String(env.ENVIA_FROM_DISTRICT || 'Centro').trim() || 'Centro',
+              city: String(env.ENVIA_FROM_CITY || 'Monterrey').trim() || 'Monterrey',
+              state: String(env.ENVIA_FROM_STATE || 'NL').trim() || 'NL',
+              postal_code: String(env.ENVIA_FROM_ZIP || '64000').trim() || '64000',
+              country: 'MX'
+            },
+            packages: [
+              {
+                content:
+                  String(env.ENVIA_DEFAULT_CONTENT || 'Health check').trim() || 'Health check',
+                amount: 1,
+                type: 'box',
+                declared_value: 1,
+                weight: Number(env.ENVIA_DEFAULT_WEIGHT_KG || 0.3) || 0.3,
+                length: Number(env.ENVIA_DEFAULT_LENGTH_CM || 18) || 18,
+                width: Number(env.ENVIA_DEFAULT_WIDTH_CM || 14) || 14,
+                height: Number(env.ENVIA_DEFAULT_HEIGHT_CM || 6) || 6
+              }
+            ]
+          }
+        }),
+        10000,
+        'Envia health check'
+      )
+      enviaHealthCache = {
+        status: status.envia,
+        expiresAt: Date.now() + ENVIA_HEALTH_TTL_MS
+      }
+    }
+  } catch (error) {
+    status.envia = {
+      configured: Boolean(String(env.ENVIA_API_KEY || '').trim()),
+      mode: String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test',
+      shipping: { ok: false, error: `Fallo en Envia Shipping: ${getErrorMessage(error)}` },
+      queries: { ok: false, error: `Fallo en Envia Queries: ${getErrorMessage(error)}` },
+      geocodes: { ok: false, error: `Fallo en Envia Geocodes: ${getErrorMessage(error)}` },
+      checked_at: new Date().toISOString()
+    }
+    enviaHealthCache = {
+      status: status.envia,
+      expiresAt: Date.now() + Math.min(ENVIA_HEALTH_TTL_MS, 15_000)
     }
   }
 
@@ -2937,6 +3418,39 @@ const DISPLAY_STATUS_SQL = `CASE
   ELSE 'pagado'
 END`
 
+function readShipmentFilters(url: URL): ShipmentListFilters {
+  const status = normalizeShippingStatus(url.searchParams.get('status'))
+  return {
+    status: status || ''
+  }
+}
+
+function mapShipmentSummary(row: ShipmentListRow, env: Env): Record<string, unknown> {
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    customer_name: row.customer_name || null,
+    customer_email: row.customer_email,
+    customer_phone: row.customer_phone || null,
+    total_amount_cents: Number(row.total_amount_cents || 0),
+    currency: row.currency || 'MXN',
+    approval_status: parseShipmentApprovalStatus(row.approval_status),
+    shipment_status: normalizeWorkerShippingStatus(row.shipment_status),
+    carrier: row.carrier || null,
+    service: row.service || null,
+    tracking_number: row.tracking_number || null,
+    tracking_url: row.tracking_url || null,
+    label_r2_key: row.label_r2_key || null,
+    label_url: row.label_r2_key ? buildAssetUrl(env, row.label_r2_key) : null,
+    approved_at: row.approved_at || null,
+    rejected_at: row.rejected_at || null,
+    rejected_reason: row.rejected_reason || null,
+    last_sync_at: row.last_sync_at || null,
+    last_error: row.last_error || null
+  }
+}
+
 async function handleGetOrders(request: Request, env: Env, requestId: string): Promise<Response> {
   workerLog(requestId, 'orders:list:start')
   try {
@@ -3084,6 +3598,8 @@ async function fetchOrderDetail(
   env: Env,
   orderId: string
 ): Promise<null | Record<string, unknown>> {
+  await ensureOrderShipmentsSchema(env, 'fetch-order-detail')
+
   const orderRow = await env.DB.prepare(
     `
       SELECT
@@ -3167,6 +3683,52 @@ async function fetchOrderDetail(
     .bind(orderId)
     .all<StripeEventRow>()
 
+  const shipmentRow = await env.DB.prepare(
+    `
+      SELECT
+        order_id,
+        provider,
+        mode,
+        approval_status,
+        shipment_status,
+        carrier,
+        service,
+        tracking_number,
+        tracking_url,
+        envia_shipment_id,
+        label_r2_key,
+        quote_amount_cents,
+        currency,
+        parcel_json,
+        address_validation_json,
+        envia_request_json,
+        envia_response_json,
+        approved_at,
+        rejected_at,
+        rejected_reason,
+        last_sync_at,
+        last_error,
+        created_at,
+        updated_at
+      FROM order_shipments
+      WHERE order_id = ?
+      LIMIT 1
+    `
+  )
+    .bind(orderId)
+    .first<OrderShipmentRow>()
+
+  const shipmentEventsResult = await env.DB.prepare(
+    `
+      SELECT id, order_id, event_type, source, payload_json, created_at
+      FROM order_shipment_events
+      WHERE order_id = ?
+      ORDER BY id DESC
+    `
+  )
+    .bind(orderId)
+    .all<OrderShipmentEventRow>()
+
   const items = (itemsResult.results || []).map((item) => ({
     ...item,
     quantity: Number(item.quantity || 0),
@@ -3202,12 +3764,381 @@ async function fetchOrderDetail(
       currency: orderRow.currency
     },
     items,
+    shipment: toOrderShipment(shipmentRow, env),
+    shipment_events: (shipmentEventsResult.results || []).map((event) => ({
+      ...event,
+      payload: safeParseJson(event.payload_json)
+    })),
     reservations: (reservationsResult.results || []).map((row) => ({
       ...row,
       quantity: Number(row.quantity || 0)
     })),
     stripe_events: stripeEventsResult.results || []
   }
+}
+
+async function fetchShipmentRow(env: Env, orderId: string): Promise<OrderShipmentRow | null> {
+  await ensureOrderShipmentsSchema(env, 'fetch-shipment-row')
+  const row = await env.DB.prepare(
+    `
+      SELECT
+        order_id,
+        provider,
+        mode,
+        approval_status,
+        shipment_status,
+        carrier,
+        service,
+        tracking_number,
+        tracking_url,
+        envia_shipment_id,
+        label_r2_key,
+        quote_amount_cents,
+        currency,
+        parcel_json,
+        address_validation_json,
+        envia_request_json,
+        envia_response_json,
+        approved_at,
+        rejected_at,
+        rejected_reason,
+        last_sync_at,
+        last_error,
+        created_at,
+        updated_at
+      FROM order_shipments
+      WHERE order_id = ?
+      LIMIT 1
+    `
+  )
+    .bind(orderId)
+    .first<OrderShipmentRow>()
+
+  return row || null
+}
+
+async function insertShipmentEvent(
+  env: Env,
+  orderId: string,
+  eventType: string,
+  source: string,
+  payload: unknown
+): Promise<void> {
+  await ensureOrderShipmentsSchema(env, 'insert-shipment-event')
+  await env.DB.prepare(
+    `
+      INSERT INTO order_shipment_events (order_id, event_type, source, payload_json)
+      VALUES (?, ?, ?, ?)
+    `
+  )
+    .bind(orderId, eventType, source, safeStringify(payload))
+    .run()
+}
+
+function buildDefaultParcel(
+  env: Env,
+  totalAmountCents: number,
+  existing: Record<string, unknown> | null = null
+): Record<string, unknown> {
+  return {
+    weight_kg: parsePositiveFloat(existing?.weight_kg, parsePositiveFloat(env.ENVIA_DEFAULT_WEIGHT_KG, 0.3)),
+    length_cm: parsePositiveFloat(existing?.length_cm, parsePositiveFloat(env.ENVIA_DEFAULT_LENGTH_CM, 18)),
+    width_cm: parsePositiveFloat(existing?.width_cm, parsePositiveFloat(env.ENVIA_DEFAULT_WIDTH_CM, 14)),
+    height_cm: parsePositiveFloat(existing?.height_cm, parsePositiveFloat(env.ENVIA_DEFAULT_HEIGHT_CM, 6)),
+    declared_value_cents: parseNonNegativeCents(existing?.declared_value_cents, totalAmountCents),
+    content: cleanText(existing?.content) || cleanText(env.ENVIA_DEFAULT_CONTENT) || 'Joyeria Lumea Imperium',
+    notes: cleanText(existing?.notes)
+  }
+}
+
+function normalizeParcelInput(
+  env: Env,
+  payload: ShipmentQuotePayload | null | undefined,
+  currentShipment: Record<string, unknown> | null,
+  totalAmountCents: number
+): { ok: true; parcel: Record<string, unknown> } | { ok: false; error: string } {
+  const existingParcel = toObjectRecord(currentShipment?.parcel)
+  const baseline = buildDefaultParcel(env, totalAmountCents, existingParcel)
+  const parcel = {
+    ...baseline,
+    weight_kg: parsePositiveFloat(payload?.weight_kg, baseline.weight_kg as number | null),
+    length_cm: parsePositiveFloat(payload?.length_cm, baseline.length_cm as number | null),
+    width_cm: parsePositiveFloat(payload?.width_cm, baseline.width_cm as number | null),
+    height_cm: parsePositiveFloat(payload?.height_cm, baseline.height_cm as number | null),
+    declared_value_cents: parseNonNegativeCents(
+      payload?.declared_value_cents,
+      baseline.declared_value_cents as number | null
+    ),
+    content: cleanText(payload?.content) || String(baseline.content || ''),
+    notes: cleanText(payload?.notes) || cleanText(baseline.notes)
+  }
+
+  if (!parcel.weight_kg || !parcel.length_cm || !parcel.width_cm || !parcel.height_cm) {
+    return { ok: false, error: 'Peso y dimensiones del paquete son obligatorios.' }
+  }
+
+  return { ok: true, parcel }
+}
+
+function getOrderShippingDestination(order: Record<string, unknown>): Record<string, unknown> | null {
+  const shippingAddress = toObjectRecord(order.shipping_address)
+  const address = toObjectRecord(shippingAddress?.address)
+  if (!address) return null
+
+  return {
+    name: cleanText(shippingAddress?.name) || cleanText(order.customer_name),
+    email: cleanText(order.customer_email),
+    phone: cleanText(shippingAddress?.phone) || cleanText(order.customer_phone),
+    street: cleanText(address.line1),
+    number: null,
+    district: cleanText(address.line2),
+    city: cleanText(address.city),
+    state: cleanText(address.state),
+    country: cleanText(address.country) || 'MX',
+    postal_code: cleanText(address.postal_code)
+  }
+}
+
+function getOriginAddress(env: Env): Record<string, unknown> | null {
+  const street = cleanText(env.ENVIA_FROM_STREET)
+  const city = cleanText(env.ENVIA_FROM_CITY)
+  const state = cleanText(env.ENVIA_FROM_STATE)
+  const postal_code = cleanText(env.ENVIA_FROM_ZIP)
+  if (!street || !city || !state || !postal_code) return null
+
+  return {
+    name: cleanText(env.ENVIA_FROM_NAME) || cleanText(env.ENVIA_FROM_COMPANY) || 'Lumea Imperium',
+    company: cleanText(env.ENVIA_FROM_COMPANY) || 'Lumea Imperium',
+    email: cleanText(env.ENVIA_FROM_EMAIL),
+    phone: cleanText(env.ENVIA_FROM_PHONE),
+    street,
+    number: cleanText(env.ENVIA_FROM_NUMBER),
+    district: cleanText(env.ENVIA_FROM_DISTRICT),
+    city,
+    state,
+    country: cleanText(env.ENVIA_FROM_COUNTRY) || 'MX',
+    postal_code
+  }
+}
+
+function buildAddressPayload(address: Record<string, unknown>): Record<string, unknown> {
+  return {
+    name: address.name,
+    company: address.company,
+    email: address.email,
+    phone: address.phone,
+    street: address.street,
+    number: address.number,
+    district: address.district,
+    city: address.city,
+    state: address.state,
+    country: address.country,
+    postal_code: address.postal_code,
+    postalCode: address.postal_code,
+    zip_code: address.postal_code,
+    zipCode: address.postal_code
+  }
+}
+
+function buildPackagePayload(parcel: Record<string, unknown>): Record<string, unknown> {
+  const declaredValueCents = Number(parcel.declared_value_cents || 0)
+  return {
+    content: parcel.content,
+    amount: 1,
+    type: 'box',
+    weight: Number(parcel.weight_kg || 0),
+    weight_kg: Number(parcel.weight_kg || 0),
+    weightUnit: 'KG',
+    weight_unit: 'KG',
+    length: Number(parcel.length_cm || 0),
+    width: Number(parcel.width_cm || 0),
+    height: Number(parcel.height_cm || 0),
+    dimensionUnit: 'CM',
+    dimension_unit: 'CM',
+    declaredValue: declaredValueCents / 100,
+    declared_value: declaredValueCents / 100,
+    insurance: declaredValueCents / 100
+  }
+}
+
+function buildQuoteRequestPayload(
+  env: Env,
+  order: Record<string, unknown>,
+  parcel: Record<string, unknown>
+): Record<string, unknown> {
+  const origin = getOriginAddress(env)
+  const destination = getOrderShippingDestination(order)
+  if (!origin || !destination) {
+    throw new Error('Configuracion de origen o direccion destino incompleta para cotizar.')
+  }
+
+  return {
+    origin: buildAddressPayload(origin),
+    destination: buildAddressPayload(destination),
+    packages: [buildPackagePayload(parcel)],
+    shipment: {
+      carrier: null,
+      service: null
+    }
+  }
+}
+
+function buildLabelRequestPayload(
+  env: Env,
+  order: Record<string, unknown>,
+  parcel: Record<string, unknown>,
+  quote: NormalizedQuote
+): Record<string, unknown> {
+  const payload = buildQuoteRequestPayload(env, order, parcel)
+  return {
+    ...payload,
+    shipment: {
+      carrier: quote.carrier,
+      service: quote.service
+    }
+  }
+}
+
+function buildTrackingRequestPayload(shipment: Record<string, unknown>): Record<string, unknown> {
+  const tracking_number = cleanText(shipment.tracking_number)
+  const carrier = cleanText(shipment.carrier)
+  if (!tracking_number) {
+    throw new Error('No hay tracking_number para sincronizar este envio.')
+  }
+
+  return {
+    tracking_number,
+    trackingNumber: tracking_number,
+    guide_number: tracking_number,
+    guideNumber: tracking_number,
+    carrier,
+    carrier_name: carrier
+  }
+}
+
+async function upsertShipmentRow(
+  env: Env,
+  orderId: string,
+  values: Record<string, unknown>
+): Promise<void> {
+  await ensureOrderShipmentsSchema(env, 'upsert-shipment-row')
+
+  const allowedKeys = [
+    'provider',
+    'mode',
+    'approval_status',
+    'shipment_status',
+    'carrier',
+    'service',
+    'tracking_number',
+    'tracking_url',
+    'envia_shipment_id',
+    'label_r2_key',
+    'quote_amount_cents',
+    'currency',
+    'parcel_json',
+    'address_validation_json',
+    'envia_request_json',
+    'envia_response_json',
+    'approved_at',
+    'rejected_at',
+    'rejected_reason',
+    'last_sync_at',
+    'last_error'
+  ]
+
+  const clauses: string[] = []
+  const bindValues: unknown[] = []
+  for (const key of allowedKeys) {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      clauses.push(`${key} = ?`)
+      bindValues.push(values[key])
+    }
+  }
+
+  if (clauses.length === 0) return
+
+  const existing = await fetchShipmentRow(env, orderId)
+  if (!existing) {
+    await env.DB.prepare(
+      `
+        INSERT INTO order_shipments (
+          order_id,
+          provider,
+          mode,
+          approval_status,
+          shipment_status,
+          currency,
+          created_at,
+          updated_at
+        ) VALUES (?, 'envia', ?, 'pending', 'pending', 'MXN', datetime('now'), datetime('now'))
+      `
+    )
+      .bind(orderId, String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test')
+      .run()
+  }
+
+  await env.DB.prepare(
+    `
+      UPDATE order_shipments
+      SET ${clauses.join(', ')}, updated_at = datetime('now')
+      WHERE order_id = ?
+    `
+  )
+    .bind(...bindValues, orderId)
+    .run()
+}
+
+async function updateOrderShippingStatus(
+  env: Env,
+  orderId: string,
+  shippingStatus: ShippingStatus
+): Promise<void> {
+  await env.DB.prepare(
+    `
+      UPDATE orders
+      SET shipping_status = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `
+  )
+    .bind(shippingStatus, orderId)
+    .run()
+}
+
+function decodeBase64ToBytes(value: string): Uint8Array {
+  const normalized = String(value || '').trim()
+  const binary = atob(normalized)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
+}
+
+async function storeShipmentLabel(
+  env: Env,
+  orderId: string,
+  shipment: NormalizedShipmentResult
+): Promise<string | null> {
+  if (shipment.label_base64) {
+    const bytes = decodeBase64ToBytes(shipment.label_base64)
+    const key = `labels/${orderId}.pdf`
+    await env.ASSETS_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType: 'application/pdf' }
+    })
+    return key
+  }
+
+  if (shipment.label_url) {
+    const buffer = await downloadLabelBinary(env, shipment.label_url)
+    const key = `labels/${orderId}.pdf`
+    await env.ASSETS_BUCKET.put(key, buffer, {
+      httpMetadata: { contentType: 'application/pdf' }
+    })
+    return key
+  }
+
+  return null
 }
 
 async function handleGetOrderById(
@@ -3389,6 +4320,622 @@ async function handlePatchOrderById(
       500
     )
   }
+}
+
+function selectQuote(
+  quotes: NormalizedQuote[],
+  payload: ShipmentQuotePayload | null | undefined
+): NormalizedQuote | null {
+  if (!quotes.length) return null
+
+  const requestedCarrier = cleanText(payload?.carrier)?.toLowerCase() || null
+  const requestedService = cleanText(payload?.service)?.toLowerCase() || null
+  if (!requestedCarrier && !requestedService) return quotes[0]
+
+  const exact = quotes.find((quote) => {
+    const carrierMatches = requestedCarrier
+      ? quote.carrier.toLowerCase() === requestedCarrier
+      : true
+    const serviceMatches = requestedService
+      ? quote.service.toLowerCase() === requestedService
+      : true
+    return carrierMatches && serviceMatches
+  })
+
+  return exact || quotes[0]
+}
+
+async function quoteOrderShipment(
+  env: Env,
+  orderId: string,
+  payload: ShipmentQuotePayload | null | undefined
+): Promise<Record<string, unknown>> {
+  const order = await fetchOrderDetail(env, orderId)
+  if (!order) {
+    throw new Error('Pedido no encontrado.')
+  }
+
+  if (String(order.status || '') === 'unpaid') {
+    throw new Error('El pedido aun no esta pagado.')
+  }
+
+  const currentShipment = toObjectRecord(order.shipment)
+  const parcelResult = normalizeParcelInput(
+    env,
+    payload,
+    currentShipment,
+    Number(order.total_amount_cents || 0)
+  )
+  if (!parcelResult.ok) {
+    throw new Error(parcelResult.error)
+  }
+
+  const requestPayload = buildQuoteRequestPayload(env, order, parcelResult.parcel)
+  const quoteResult = await quoteShipment(env, requestPayload)
+  const selected = selectQuote(quoteResult.quotes, payload)
+  if (!selected) {
+    throw new Error('Envia no devolvio cotizaciones validas para este envio.')
+  }
+
+  await upsertShipmentRow(env, orderId, {
+    parcel_json: safeStringify(parcelResult.parcel),
+    quote_amount_cents: selected.amount_cents,
+    currency: selected.currency,
+    carrier: selected.carrier,
+    service: selected.service,
+    envia_request_json: safeStringify(requestPayload),
+    envia_response_json: safeStringify(quoteResult.payload),
+    last_error: null
+  })
+
+  await insertShipmentEvent(env, orderId, 'quoted', 'admin', {
+    selected_quote: selected,
+    quotes_count: quoteResult.quotes.length
+  })
+
+  const refreshed = await fetchOrderDetail(env, orderId)
+  return {
+    success: true,
+    order: refreshed,
+    quotes: quoteResult.quotes,
+    selected_quote: selected
+  }
+}
+
+async function syncOrderShipmentStatus(
+  env: Env,
+  orderId: string,
+  source: 'admin' | 'scheduled' | 'webhook'
+): Promise<Record<string, unknown>> {
+  const order = await fetchOrderDetail(env, orderId)
+  if (!order) {
+    throw new Error('Pedido no encontrado.')
+  }
+
+  const shipment = toObjectRecord(order.shipment)
+  if (!shipment) {
+    throw new Error('El pedido no tiene registro de envio.')
+  }
+
+  const tracking = await trackShipment(env, buildTrackingRequestPayload(shipment))
+  await upsertShipmentRow(env, orderId, {
+    shipment_status: tracking.status,
+    tracking_url: tracking.tracking_url || cleanText(shipment.tracking_url),
+    tracking_number: tracking.tracking_number || cleanText(shipment.tracking_number),
+    carrier: tracking.carrier || cleanText(shipment.carrier),
+    envia_response_json: safeStringify(tracking.raw),
+    last_sync_at: new Date().toISOString(),
+    last_error: null
+  })
+  await updateOrderShippingStatus(env, orderId, tracking.status)
+  await insertShipmentEvent(env, orderId, 'synced', source, tracking.raw)
+
+  const refreshed = await fetchOrderDetail(env, orderId)
+  return { success: true, order: refreshed }
+}
+
+async function handleGetPendingShipments(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:pending:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    await ensureOrdersAdminSchema(env, requestId)
+    await ensureOrderShipmentsSchema(env, requestId)
+
+    const result = await env.DB.prepare(
+      `
+        SELECT
+          o.id,
+          o.created_at,
+          o.updated_at,
+          o.customer_name,
+          o.customer_email,
+          o.customer_phone,
+          o.total_amount_cents,
+          o.currency,
+          os.approval_status,
+          os.shipment_status,
+          os.carrier,
+          os.service,
+          os.tracking_number,
+          os.tracking_url,
+          os.label_r2_key,
+          os.approved_at,
+          os.rejected_at,
+          os.rejected_reason,
+          os.last_sync_at,
+          os.last_error
+        FROM order_shipments os
+        INNER JOIN orders o ON o.id = os.order_id
+        WHERE o.status <> 'unpaid'
+          AND os.approval_status = 'pending'
+        ORDER BY datetime(o.created_at) DESC, o.id DESC
+      `
+    ).all<ShipmentListRow>()
+
+    const shipments = (result.results || []).map((row) => mapShipmentSummary(row, env))
+    return json(request, env, { success: true, shipments })
+  } catch (error) {
+    workerError(requestId, 'shipments:pending:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error obteniendo pendientes: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleGetShipments(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:list:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    await ensureOrdersAdminSchema(env, requestId)
+    await ensureOrderShipmentsSchema(env, requestId)
+
+    const filters = readShipmentFilters(new URL(request.url))
+    const where: string[] = ["os.approval_status = 'approved'"]
+    const binds: unknown[] = []
+    if (filters.status) {
+      where.push('os.shipment_status = ?')
+      binds.push(filters.status)
+    }
+
+    const result = await env.DB.prepare(
+      `
+        SELECT
+          o.id,
+          o.created_at,
+          o.updated_at,
+          o.customer_name,
+          o.customer_email,
+          o.customer_phone,
+          o.total_amount_cents,
+          o.currency,
+          os.approval_status,
+          os.shipment_status,
+          os.carrier,
+          os.service,
+          os.tracking_number,
+          os.tracking_url,
+          os.label_r2_key,
+          os.approved_at,
+          os.rejected_at,
+          os.rejected_reason,
+          os.last_sync_at,
+          os.last_error
+        FROM order_shipments os
+        INNER JOIN orders o ON o.id = os.order_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY datetime(COALESCE(os.approved_at, o.created_at)) DESC, o.id DESC
+      `
+    )
+      .bind(...binds)
+      .all<ShipmentListRow>()
+
+    const shipments = (result.results || []).map((row) => mapShipmentSummary(row, env))
+    return json(request, env, { success: true, shipments })
+  } catch (error) {
+    workerError(requestId, 'shipments:list:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error obteniendo envios: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleGetShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:get:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    await ensureOrdersAdminSchema(env, requestId)
+    await ensureOrderShipmentsSchema(env, requestId)
+    const order = await fetchOrderDetail(env, orderId)
+    if (!order) {
+      return json(request, env, { success: false, error: 'Pedido no encontrado.' }, 404)
+    }
+    return json(request, env, { success: true, order })
+  } catch (error) {
+    workerError(requestId, 'shipments:get:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error obteniendo envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleQuoteShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:quote:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentQuotePayload
+    const response = await quoteOrderShipment(env, orderId, payload)
+    return json(request, env, response)
+  } catch (error) {
+    workerError(requestId, 'shipments:quote:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error cotizando envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleApproveShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:approve:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentQuotePayload
+    const quoted = await quoteOrderShipment(env, orderId, payload)
+    const order = toObjectRecord(quoted.order)
+    if (!order) {
+      throw new Error('No se pudo preparar el pedido para aprobacion.')
+    }
+
+    const selectedQuote = quoted.selected_quote as NormalizedQuote | null
+    if (!selectedQuote) {
+      throw new Error('No se encontro una cotizacion seleccionada.')
+    }
+
+    const currentShipment = toObjectRecord(order.shipment)
+    if (
+      currentShipment &&
+      String(currentShipment.approval_status || '') === 'approved' &&
+      cleanText(currentShipment.tracking_number)
+    ) {
+      return json(request, env, { success: true, order })
+    }
+
+    const parcel = toObjectRecord(currentShipment?.parcel)
+    if (!parcel) {
+      throw new Error('No se pudo construir el paquete para este envio.')
+    }
+
+    const labelPayload = buildLabelRequestPayload(env, order, parcel, selectedQuote)
+    const created = await createShippingLabel(env, labelPayload)
+    const normalizedStatus = normalizeWorkerShippingStatus(created.status || 'preparing')
+    const labelKey = await storeShipmentLabel(env, orderId, created)
+
+    await upsertShipmentRow(env, orderId, {
+      approval_status: 'approved',
+      shipment_status: normalizedStatus,
+      carrier: created.carrier || selectedQuote.carrier,
+      service: created.service || selectedQuote.service,
+      tracking_number: created.tracking_number,
+      tracking_url: created.tracking_url,
+      envia_shipment_id: created.shipment_id,
+      label_r2_key: labelKey,
+      quote_amount_cents: selectedQuote.amount_cents,
+      currency: selectedQuote.currency,
+      envia_request_json: safeStringify(labelPayload),
+      envia_response_json: safeStringify(created.raw),
+      approved_at: new Date().toISOString(),
+      last_sync_at: new Date().toISOString(),
+      rejected_at: null,
+      rejected_reason: null,
+      last_error: null
+    })
+    await updateOrderShippingStatus(env, orderId, normalizedStatus)
+    await insertShipmentEvent(env, orderId, 'approved', 'admin', {
+      quote: selectedQuote,
+      shipment: created
+    })
+
+    const refreshed = await fetchOrderDetail(env, orderId)
+    return json(request, env, { success: true, order: refreshed })
+  } catch (error) {
+    workerError(requestId, 'shipments:approve:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error aprobando envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleRejectShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:reject:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentRejectPayload
+    const reason = cleanText(payload.reason)
+    if (!reason) {
+      return json(request, env, { success: false, error: 'Debes indicar el motivo del rechazo.' }, 400)
+    }
+
+    const current = await fetchShipmentRow(env, orderId)
+    if (!current) {
+      return json(request, env, { success: false, error: 'Pedido no encontrado.' }, 404)
+    }
+    if (parseShipmentApprovalStatus(current.approval_status) === 'approved') {
+      return json(
+        request,
+        env,
+        { success: false, error: 'No se puede rechazar un envio ya aprobado.' },
+        409
+      )
+    }
+
+    await upsertShipmentRow(env, orderId, {
+      approval_status: 'rejected',
+      rejected_reason: reason,
+      rejected_at: new Date().toISOString(),
+      last_error: reason
+    })
+    await insertShipmentEvent(env, orderId, 'rejected', 'admin', { reason })
+    const refreshed = await fetchOrderDetail(env, orderId)
+    return json(request, env, { success: true, order: refreshed })
+  } catch (error) {
+    workerError(requestId, 'shipments:reject:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error rechazando envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleSyncShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:sync:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const response = await syncOrderShipmentStatus(env, orderId, 'admin')
+    return json(request, env, response)
+  } catch (error) {
+    workerError(requestId, 'shipments:sync:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error sincronizando envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleEnviaWebhook(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:webhook:start')
+  try {
+    const expected = cleanText(env.ENVIA_WEBHOOK_TOKEN)
+    if (expected) {
+      const actual =
+        cleanText(request.headers.get('x-envia-webhook-token')) ||
+        cleanText(new URL(request.url).searchParams.get('token'))
+      if (actual !== expected) {
+        return json(request, env, { success: false, error: 'Webhook token invalido.' }, 403)
+      }
+    }
+
+    const payload = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    if (!payload) {
+      return json(request, env, {
+        success: true,
+        ignored: true,
+        reason: 'empty_or_invalid_payload'
+      })
+    }
+
+    const webhookTracking = normalizeTrackingResult(payload)
+    const trackingNumber =
+      webhookTracking.tracking_number ||
+      cleanText(payload.tracking_number) ||
+      cleanText(payload.trackingNumber) ||
+      cleanText(payload.guide_number) ||
+      cleanText(payload.guideNumber)
+
+    if (!trackingNumber) {
+      return json(request, env, {
+        success: true,
+        ignored: true,
+        reason: 'missing_tracking_number'
+      })
+    }
+
+    await ensureOrderShipmentsSchema(env, requestId)
+    const shipmentRow = await env.DB.prepare(
+      `
+        SELECT order_id
+        FROM order_shipments
+        WHERE tracking_number = ?
+        LIMIT 1
+      `
+    )
+      .bind(trackingNumber)
+      .first<{ order_id: string }>()
+
+    if (!shipmentRow?.order_id) {
+      return json(request, env, {
+        success: true,
+        ignored: true,
+        reason: 'tracking_not_found',
+        tracking_number: trackingNumber
+      })
+    }
+
+    const current = await fetchShipmentRow(env, shipmentRow.order_id)
+    const nextStatus = webhookTracking.status
+    const noChange =
+      current &&
+      normalizeWorkerShippingStatus(current.shipment_status) === nextStatus &&
+      cleanText(current.tracking_number) === trackingNumber
+
+    if (!noChange) {
+      await upsertShipmentRow(env, shipmentRow.order_id, {
+        shipment_status: nextStatus,
+        tracking_number: trackingNumber,
+        tracking_url: webhookTracking.tracking_url,
+        carrier: webhookTracking.carrier,
+        envia_response_json: safeStringify(payload),
+        last_sync_at: new Date().toISOString(),
+        last_error: null
+      })
+      await updateOrderShippingStatus(env, shipmentRow.order_id, nextStatus)
+      await insertShipmentEvent(env, shipmentRow.order_id, 'webhook', 'envia', payload)
+    }
+
+    const refreshed = await fetchOrderDetail(env, shipmentRow.order_id)
+    return json(request, env, { success: true, order: refreshed, duplicate: Boolean(noChange) })
+  } catch (error) {
+    workerError(requestId, 'shipments:webhook:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error procesando webhook Envia: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleEnviaWebhookProbe(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:webhook:probe')
+  const expected = cleanText(env.ENVIA_WEBHOOK_TOKEN)
+  if (expected) {
+    const actual =
+      cleanText(request.headers.get('x-envia-webhook-token')) ||
+      cleanText(new URL(request.url).searchParams.get('token'))
+    if (actual !== expected) {
+      return json(request, env, { success: false, error: 'Webhook token invalido.' }, 403)
+    }
+  }
+
+  return json(request, env, {
+    success: true,
+    webhook: 'envia',
+    reachable: true
+  })
+}
+
+async function listNonTerminalApprovedShipmentOrderIds(env: Env): Promise<string[]> {
+  await ensureOrderShipmentsSchema(env, 'scheduled-shipments-sync')
+  const result = await env.DB.prepare(
+    `
+      SELECT order_id
+      FROM order_shipments
+      WHERE approval_status = 'approved'
+        AND shipment_status NOT IN ('delivered', 'cancelled', 'lost')
+      ORDER BY datetime(COALESCE(last_sync_at, approved_at, created_at)) ASC, order_id ASC
+      LIMIT 25
+    `
+  ).all<{ order_id: string }>()
+
+  return (result.results || [])
+    .map((row) => String(row.order_id || '').trim())
+    .filter(Boolean)
+}
+
+async function runScheduledShipmentSync(env: Env): Promise<void> {
+  const requestId = `sched-${crypto.randomUUID().slice(0, 8)}`
+  workerLog(requestId, 'shipments:scheduled:start')
+  const orderIds = await listNonTerminalApprovedShipmentOrderIds(env)
+  for (const orderId of orderIds) {
+    try {
+      await syncOrderShipmentStatus(env, orderId, 'scheduled')
+    } catch (error) {
+      workerError(requestId, 'shipments:scheduled:item:error', {
+        orderId,
+        error: getErrorMessage(error)
+      })
+      await upsertShipmentRow(env, orderId, {
+        last_error: `Sync programado: ${getErrorMessage(error)}`,
+        last_sync_at: new Date().toISOString()
+      }).catch(() => null)
+    }
+  }
+  workerLog(requestId, 'shipments:scheduled:done', { processed: orderIds.length })
 }
 
 async function handleUpload(request: Request, env: Env, requestId: string): Promise<Response> {
@@ -3584,6 +5131,8 @@ export default {
     const reviewRoute = getProductReviewRoute(pathname)
     const productTypeId = getProductTypeIdFromPath(pathname)
     const orderId = getOrderIdFromPath(pathname)
+    const shipmentOrderId = getShipmentOrderIdFromPath(pathname)
+    const shipmentActionRoute = getShipmentActionRoute(pathname)
     workerLog(requestId, 'request:start', {
       method: request.method,
       pathname,
@@ -3592,7 +5141,9 @@ export default {
       variantRoute,
       reviewRoute,
       productTypeId,
-      orderId
+      orderId,
+      shipmentOrderId,
+      shipmentActionRoute
     })
 
     if (request.method === 'OPTIONS') {
@@ -3624,6 +5175,123 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/orders') {
       const response = await handleGetOrders(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/shipments/pending') {
+      const response = await handleGetPendingShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/shipments') {
+      const response = await handleGetShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (shipmentOrderId !== null && request.method === 'GET') {
+      const response = await handleGetShipmentByOrderId(request, env, requestId, shipmentOrderId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'quote' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleQuoteShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'approve' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleApproveShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'reject' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleRejectShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'sync' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleSyncShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/integrations/envia/webhook') {
+      const response = await handleEnviaWebhookProbe(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'POST' && pathname === '/api/integrations/envia/webhook') {
+      const response = await handleEnviaWebhook(request, env, requestId)
       workerLog(requestId, 'request:done', {
         status: response.status,
         elapsedMs: Date.now() - startedAt
@@ -3893,5 +5561,8 @@ export default {
       elapsedMs: Date.now() - startedAt
     })
     return response
+  },
+  async scheduled(_controller, env): Promise<void> {
+    await runScheduledShipmentSync(env)
   }
 } satisfies ExportedHandler<Env>

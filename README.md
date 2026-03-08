@@ -51,6 +51,12 @@ Este comando levanta:
 npm run dev
 ```
 
+Si quieres usar el frontend local contra el Worker publico en `workers.dev` en lugar del backend local:
+
+```bash
+npm run dev:workers
+```
+
 Desde otro dispositivo en tu red local abre:
 
 ```text
