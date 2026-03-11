@@ -324,6 +324,27 @@ type OrderShipmentRow = {
   rejected_reason: string | null
   last_sync_at: string | null
   last_error: string | null
+  last_error_code: string | null
+  tracking_sync_paused_at: string | null
+  tracking_sync_pause_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+type OrderShipmentGuideRow = {
+  order_id: string
+  guide_index: number
+  carrier: string | null
+  service: string | null
+  tracking_number: string | null
+  tracking_url: string | null
+  envia_shipment_id: string | null
+  label_r2_key: string | null
+  parcel_json: string | null
+  envia_request_json: string | null
+  envia_response_json: string | null
+  shipment_status: string | null
+  last_error: string | null
   created_at: string
   updated_at: string
 }
@@ -358,10 +379,29 @@ type ShipmentListRow = {
   rejected_reason: string | null
   last_sync_at: string | null
   last_error: string | null
+  last_error_code: string | null
+  tracking_sync_paused_at: string | null
+  tracking_sync_pause_reason: string | null
 }
 
 type ShipmentListFilters = {
   status: ShippingStatus | ''
+}
+
+type ShipmentBoxPlanBoxPayload = {
+  units_in_box?: number | string | null
+  weight_kg?: number | string | null
+  length_cm?: number | string | null
+  width_cm?: number | string | null
+  height_cm?: number | string | null
+  declared_value_cents?: number | string | null
+  content?: string | null
+  notes?: string | null
+}
+
+type ShipmentBoxPlanPayload = {
+  products_per_box?: number | string | null
+  boxes?: ShipmentBoxPlanBoxPayload[] | null
 }
 
 type ShipmentQuotePayload = {
@@ -374,6 +414,7 @@ type ShipmentQuotePayload = {
   notes?: string | null
   carrier?: string | null
   service?: string | null
+  box_plan?: ShipmentBoxPlanPayload | null
 }
 
 type ShipmentQuoteMode = 'auto' | 'manual'
@@ -425,6 +466,9 @@ const tableColumnsCache = new Map<string, Set<string>>()
 const tableExistsCache = new Map<string, boolean>()
 const ENVIA_HEALTH_TTL_MS = 60_000
 const ENVIA_LABEL_SHIPMENT_TYPE = 1
+const SHIPMENT_ERROR_CODE_APPROVAL_PARTIAL_FAILURE = 'approval_partial_failure'
+const SHIPMENT_ERROR_CODE_CARRIER_ACCOUNT_MISMATCH = 'carrier_account_mismatch'
+const SHIPMENT_ERROR_CODE_TRACKING_FORBIDDEN = 'tracking_forbidden'
 const ENVIA_PRINT_SIZE_ENUMS = new Set([
   'PAPER_4.75X7',
   'PAPER_4X6',
@@ -636,7 +680,9 @@ function sanitizeFileName(fileName: string): string {
 }
 
 function normalizeAssetPrefix(value: unknown): string {
-  const trimmed = String(value ?? '').trim().replace(/\\/g, '/')
+  const trimmed = String(value ?? '')
+    .trim()
+    .replace(/\\/g, '/')
   const normalized = trimmed.replace(/^\/+/, '').replace(/\/+/g, '/')
   if (!normalized) return 'products/'
   return normalized.endsWith('/') ? normalized : `${normalized}/`
@@ -679,6 +725,30 @@ function getHttpStatus(error: unknown, fallback = 500): number {
 
 function getErrorCode(error: unknown): string | null {
   return error instanceof HttpError ? error.code : null
+}
+
+function isCarrierAccountMismatchError(error: unknown): boolean {
+  if (error instanceof EnviaRequestError && error.providerCode === '120121') {
+    return true
+  }
+  const message = getErrorMessage(error).toLowerCase()
+  return (
+    message.includes('120121') ||
+    message.includes("shipper's shipper number cannot be used for the shipment")
+  )
+}
+
+function buildCarrierAccountMismatchMessage(quote: NormalizedQuote): string {
+  return `Carrier/servicio ${quote.carrier}/${quote.service} no compatible con la cuenta actual de Envia. Vuelve a cotizar.`
+}
+
+function buildPartialApprovalFailureMessage(createdGuides: Array<Record<string, unknown>>): string {
+  const count = createdGuides.length
+  return `Incidente operativo: Envia genero ${count} guia(s) antes de fallar. El pedido sigue pendiente y requiere revision manual antes de reintentar.`
+}
+
+function isTrackingForbiddenError(error: unknown): boolean {
+  return error instanceof EnviaRequestError && error.status === 403
 }
 
 function getChangesFromRun(result: unknown): number {
@@ -1285,6 +1355,7 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
       workerLog(requestId, 'shipments:schema:start')
       clearTableMetadataCache('order_shipments')
       clearTableMetadataCache('order_shipment_events')
+      clearTableMetadataCache('order_shipment_guides')
 
       await env.DB.prepare(
         `
@@ -1311,12 +1382,42 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
           rejected_reason TEXT,
           last_sync_at TEXT,
           last_error TEXT,
+          last_error_code TEXT,
+          tracking_sync_paused_at TEXT,
+          tracking_sync_pause_reason TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
           FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
         )
         `
       ).run()
+
+      const hasLastErrorCode = await tableHasColumn(env, 'order_shipments', 'last_error_code')
+      if (!hasLastErrorCode) {
+        await env.DB.prepare('ALTER TABLE order_shipments ADD COLUMN last_error_code TEXT').run()
+      }
+
+      const hasTrackingSyncPausedAt = await tableHasColumn(
+        env,
+        'order_shipments',
+        'tracking_sync_paused_at'
+      )
+      if (!hasTrackingSyncPausedAt) {
+        await env.DB.prepare(
+          'ALTER TABLE order_shipments ADD COLUMN tracking_sync_paused_at TEXT'
+        ).run()
+      }
+
+      const hasTrackingSyncPauseReason = await tableHasColumn(
+        env,
+        'order_shipments',
+        'tracking_sync_pause_reason'
+      )
+      if (!hasTrackingSyncPauseReason) {
+        await env.DB.prepare(
+          'ALTER TABLE order_shipments ADD COLUMN tracking_sync_pause_reason TEXT'
+        ).run()
+      }
 
       await env.DB.prepare(
         `CREATE INDEX IF NOT EXISTS idx_order_shipments_approval_status
@@ -1350,6 +1451,40 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
       await env.DB.prepare(
         `CREATE INDEX IF NOT EXISTS idx_order_shipment_events_order
          ON order_shipment_events(order_id, created_at DESC)`
+      ).run()
+
+      await env.DB.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS order_shipment_guides (
+          order_id TEXT NOT NULL,
+          guide_index INTEGER NOT NULL,
+          carrier TEXT,
+          service TEXT,
+          tracking_number TEXT,
+          tracking_url TEXT,
+          envia_shipment_id TEXT,
+          label_r2_key TEXT,
+          parcel_json TEXT,
+          envia_request_json TEXT,
+          envia_response_json TEXT,
+          shipment_status TEXT NOT NULL DEFAULT 'pending',
+          last_error TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (order_id, guide_index),
+          FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+        )
+        `
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipment_guides_tracking_number
+         ON order_shipment_guides(tracking_number)`
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_shipment_guides_order
+         ON order_shipment_guides(order_id, guide_index ASC)`
       ).run()
 
       await env.DB.prepare(
@@ -1395,6 +1530,7 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
 
       clearTableMetadataCache('order_shipments')
       clearTableMetadataCache('order_shipment_events')
+      clearTableMetadataCache('order_shipment_guides')
       workerLog(requestId, 'shipments:schema:done')
     })().catch((error) => {
       ensureOrderShipmentsSchemaPromise = null
@@ -1497,9 +1633,11 @@ function compactObject(value: unknown): unknown {
 }
 
 function normalizeCountryCode(value: unknown, fallback = 'MX'): string {
-  return String(value || fallback)
-    .trim()
-    .toUpperCase() || fallback
+  return (
+    String(value || fallback)
+      .trim()
+      .toUpperCase() || fallback
+  )
 }
 
 function normalizeMxStateCode(value: unknown): string | null {
@@ -1519,7 +1657,9 @@ function normalizeMxStateCode(value: unknown): string | null {
   return null
 }
 
-function extractMxStateCodeFromValidation(validation: Record<string, unknown> | null): string | null {
+function extractMxStateCodeFromValidation(
+  validation: Record<string, unknown> | null
+): string | null {
   if (!validation) return null
 
   const raw = toObjectRecord(validation.raw)
@@ -1544,7 +1684,11 @@ function resolveEnviaGeocodesBaseUrl(env: Env): string {
   return cleanText(env.ENVIA_GEOCODES_BASE_URL) || 'https://geocodes.envia.com'
 }
 
-async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
+async function fetchJsonWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<unknown> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -1639,6 +1783,12 @@ function parsePositiveFloat(value: unknown, fallback: number | null = null): num
   return Math.round(parsed * 1000) / 1000
 }
 
+function parsePositiveInteger(value: unknown, fallback: number | null = null): number | null {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback
+  return parsed
+}
+
 function parseNonNegativeCents(value: unknown, fallback: number | null = null): number | null {
   if (value === null || value === undefined || value === '') return fallback
   const parsed = Number(value)
@@ -1647,7 +1797,9 @@ function parseNonNegativeCents(value: unknown, fallback: number | null = null): 
 }
 
 function parseShipmentApprovalStatus(value: unknown): ShipmentApprovalStatus {
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'approved') return 'approved'
   if (normalized === 'rejected') return 'rejected'
   return 'pending'
@@ -1657,11 +1809,66 @@ function normalizeWorkerShippingStatus(value: unknown): ShippingStatus {
   return normalizeShippingStatus(value) || 'pending'
 }
 
+function toShipmentGuide(row: OrderShipmentGuideRow, env: Env): Record<string, unknown> {
+  return {
+    guide_index: Number(row.guide_index || 0),
+    carrier: row.carrier || null,
+    service: row.service || null,
+    tracking_number: row.tracking_number || null,
+    tracking_url: row.tracking_url || null,
+    envia_shipment_id: row.envia_shipment_id || null,
+    label_r2_key: row.label_r2_key || null,
+    label_url: row.label_r2_key ? buildAssetUrl(env, row.label_r2_key) : null,
+    parcel: safeParseJson(row.parcel_json),
+    envia_request: safeParseJson(row.envia_request_json),
+    envia_response: safeParseJson(row.envia_response_json),
+    shipment_status: normalizeWorkerShippingStatus(row.shipment_status),
+    last_error: row.last_error || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  }
+}
+
+function buildLegacyShipmentGuide(
+  shipmentRow: OrderShipmentRow,
+  env: Env
+): Record<string, unknown> | null {
+  if (
+    !shipmentRow.tracking_number &&
+    !shipmentRow.label_r2_key &&
+    !shipmentRow.envia_shipment_id &&
+    !shipmentRow.parcel_json
+  ) {
+    return null
+  }
+
+  return {
+    guide_index: 1,
+    carrier: shipmentRow.carrier || null,
+    service: shipmentRow.service || null,
+    tracking_number: shipmentRow.tracking_number || null,
+    tracking_url: shipmentRow.tracking_url || null,
+    envia_shipment_id: shipmentRow.envia_shipment_id || null,
+    label_r2_key: shipmentRow.label_r2_key || null,
+    label_url: shipmentRow.label_r2_key ? buildAssetUrl(env, shipmentRow.label_r2_key) : null,
+    parcel: safeParseJson(shipmentRow.parcel_json),
+    envia_request: safeParseJson(shipmentRow.envia_request_json),
+    envia_response: safeParseJson(shipmentRow.envia_response_json),
+    shipment_status: normalizeWorkerShippingStatus(shipmentRow.shipment_status),
+    last_error: shipmentRow.last_error || null,
+    created_at: shipmentRow.created_at,
+    updated_at: shipmentRow.updated_at
+  }
+}
+
 function toOrderShipment(
   row: OrderShipmentRow | null | undefined,
-  env: Env
+  env: Env,
+  guides: Record<string, unknown>[] = []
 ): null | Record<string, unknown> {
   if (!row?.order_id) return null
+  const legacyGuide = buildLegacyShipmentGuide(row, env)
+  const normalizedGuides = guides.length > 0 ? guides : legacyGuide ? [legacyGuide] : []
   return {
     order_id: row.order_id,
     provider: row.provider || 'envia',
@@ -1686,6 +1893,10 @@ function toOrderShipment(
     rejected_reason: row.rejected_reason || null,
     last_sync_at: row.last_sync_at || null,
     last_error: row.last_error || null,
+    last_error_code: row.last_error_code || null,
+    tracking_sync_paused_at: row.tracking_sync_paused_at || null,
+    tracking_sync_pause_reason: row.tracking_sync_pause_reason || null,
+    guides: normalizedGuides,
     created_at: row.created_at,
     updated_at: row.updated_at
   }
@@ -1964,12 +2175,7 @@ async function replaceProductImages(
       env.DB.prepare(
         `INSERT INTO product_images (product_id, position, image_key, alt_text)
          VALUES (?, ?, ?, ?)`
-      ).bind(
-        productId,
-        image.position,
-        image.image_key,
-        image.alt_text ? image.alt_text : null
-      )
+      ).bind(productId, image.position, image.image_key, image.alt_text ? image.alt_text : null)
     )
   }
 
@@ -2297,9 +2503,11 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
     },
     envia: {
       configured: false,
-      mode: (String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test') as
-        | 'test'
-        | 'prod',
+      mode: (String(env.ENVIA_MODE || 'test')
+        .trim()
+        .toLowerCase() === 'prod'
+        ? 'prod'
+        : 'test') as 'test' | 'prod',
       shipping: { ok: false, error: 'Envia no verificado.' as string | null },
       queries: { ok: false, error: 'Envia no verificado.' as string | null },
       geocodes: { ok: false, error: 'Envia no verificado.' as string | null },
@@ -2375,8 +2583,10 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
               name:
                 String(env.ENVIA_FROM_NAME || env.ENVIA_FROM_COMPANY || 'Lumea Imperium').trim() ||
                 'Lumea Imperium',
-              company: String(env.ENVIA_FROM_COMPANY || 'Lumea Imperium').trim() || 'Lumea Imperium',
-              email: String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
+              company:
+                String(env.ENVIA_FROM_COMPANY || 'Lumea Imperium').trim() || 'Lumea Imperium',
+              email:
+                String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
               phone: String(env.ENVIA_FROM_PHONE || '8181818181').trim() || '8181818181',
               street: String(env.ENVIA_FROM_STREET || 'Av Fundidora').trim() || 'Av Fundidora',
               number: String(env.ENVIA_FROM_NUMBER || '100').trim() || '100',
@@ -2389,7 +2599,8 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
             destination: {
               name: 'Health Check',
               company: 'Health Check',
-              email: String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
+              email:
+                String(env.ENVIA_FROM_EMAIL || 'ops@lumea.invalid').trim() || 'ops@lumea.invalid',
               phone: String(env.ENVIA_FROM_PHONE || '8181818181').trim() || '8181818181',
               street: String(env.ENVIA_FROM_STREET || 'Av Fundidora').trim() || 'Av Fundidora',
               number: String(env.ENVIA_FROM_NUMBER || '100').trim() || '100',
@@ -2425,7 +2636,12 @@ async function handleHealth(request: Request, env: Env, requestId: string): Prom
   } catch (error) {
     status.envia = {
       configured: Boolean(String(env.ENVIA_API_KEY || '').trim()),
-      mode: String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test',
+      mode:
+        String(env.ENVIA_MODE || 'test')
+          .trim()
+          .toLowerCase() === 'prod'
+          ? 'prod'
+          : 'test',
       shipping: { ok: false, error: `Fallo en Envia Shipping: ${getErrorMessage(error)}` },
       queries: { ok: false, error: `Fallo en Envia Queries: ${getErrorMessage(error)}` },
       geocodes: { ok: false, error: `Fallo en Envia Geocodes: ${getErrorMessage(error)}` },
@@ -2583,7 +2799,11 @@ async function handleCreateProduct(
       return json(
         request,
         env,
-        { success: false, code: 'schema_not_ready', error: 'Schema no listo para multiples imagenes.' },
+        {
+          success: false,
+          code: 'schema_not_ready',
+          error: 'Schema no listo para multiples imagenes.'
+        },
         409
       )
     }
@@ -2761,7 +2981,11 @@ async function handleUpdateProduct(
       return json(
         request,
         env,
-        { success: false, code: 'schema_not_ready', error: 'Schema no listo para multiples imagenes.' },
+        {
+          success: false,
+          code: 'schema_not_ready',
+          error: 'Schema no listo para multiples imagenes.'
+        },
         409
       )
     }
@@ -3740,7 +3964,10 @@ function mapShipmentSummary(row: ShipmentListRow, env: Env): Record<string, unkn
     rejected_at: row.rejected_at || null,
     rejected_reason: row.rejected_reason || null,
     last_sync_at: row.last_sync_at || null,
-    last_error: row.last_error || null
+    last_error: row.last_error || null,
+    last_error_code: row.last_error_code || null,
+    tracking_sync_paused_at: row.tracking_sync_paused_at || null,
+    tracking_sync_pause_reason: row.tracking_sync_pause_reason || null
   }
 }
 
@@ -3998,11 +4225,14 @@ async function fetchOrderDetail(
         envia_response_json,
         approved_at,
         rejected_at,
-        rejected_reason,
-        last_sync_at,
-        last_error,
-        created_at,
-        updated_at
+          rejected_reason,
+          last_sync_at,
+          last_error,
+          last_error_code,
+          tracking_sync_paused_at,
+          tracking_sync_pause_reason,
+          created_at,
+          updated_at
       FROM order_shipments
       WHERE order_id = ?
       LIMIT 1
@@ -4021,6 +4251,32 @@ async function fetchOrderDetail(
   )
     .bind(orderId)
     .all<OrderShipmentEventRow>()
+
+  const shipmentGuidesResult = await env.DB.prepare(
+    `
+      SELECT
+        order_id,
+        guide_index,
+        carrier,
+        service,
+        tracking_number,
+        tracking_url,
+        envia_shipment_id,
+        label_r2_key,
+        parcel_json,
+        envia_request_json,
+        envia_response_json,
+        shipment_status,
+        last_error,
+        created_at,
+        updated_at
+      FROM order_shipment_guides
+      WHERE order_id = ?
+      ORDER BY guide_index ASC
+    `
+  )
+    .bind(orderId)
+    .all<OrderShipmentGuideRow>()
 
   const items = (itemsResult.results || []).map((item) => ({
     ...item,
@@ -4057,7 +4313,11 @@ async function fetchOrderDetail(
       currency: orderRow.currency
     },
     items,
-    shipment: toOrderShipment(shipmentRow, env),
+    shipment: toOrderShipment(
+      shipmentRow,
+      env,
+      (shipmentGuidesResult.results || []).map((guide) => toShipmentGuide(guide, env))
+    ),
     shipment_events: (shipmentEventsResult.results || []).map((event) => ({
       ...event,
       payload: safeParseJson(event.payload_json)
@@ -4094,11 +4354,14 @@ async function fetchShipmentRow(env: Env, orderId: string): Promise<OrderShipmen
         envia_response_json,
         approved_at,
         rejected_at,
-        rejected_reason,
-        last_sync_at,
-        last_error,
-        created_at,
-        updated_at
+          rejected_reason,
+          last_sync_at,
+          last_error,
+          last_error_code,
+          tracking_sync_paused_at,
+          tracking_sync_pause_reason,
+          created_at,
+          updated_at
       FROM order_shipments
       WHERE order_id = ?
       LIMIT 1
@@ -4134,21 +4397,224 @@ function buildDefaultParcel(
   existing: Record<string, unknown> | null = null
 ): Record<string, unknown> {
   return {
-    weight_kg: parsePositiveFloat(existing?.weight_kg, parsePositiveFloat(env.ENVIA_DEFAULT_WEIGHT_KG, 1)),
-    length_cm: parsePositiveFloat(existing?.length_cm, parsePositiveFloat(env.ENVIA_DEFAULT_LENGTH_CM, 10)),
-    width_cm: parsePositiveFloat(existing?.width_cm, parsePositiveFloat(env.ENVIA_DEFAULT_WIDTH_CM, 10)),
-    height_cm: parsePositiveFloat(existing?.height_cm, parsePositiveFloat(env.ENVIA_DEFAULT_HEIGHT_CM, 10)),
+    weight_kg: parsePositiveFloat(
+      existing?.weight_kg,
+      parsePositiveFloat(env.ENVIA_DEFAULT_WEIGHT_KG, 1)
+    ),
+    length_cm: parsePositiveFloat(
+      existing?.length_cm,
+      parsePositiveFloat(env.ENVIA_DEFAULT_LENGTH_CM, 10)
+    ),
+    width_cm: parsePositiveFloat(
+      existing?.width_cm,
+      parsePositiveFloat(env.ENVIA_DEFAULT_WIDTH_CM, 10)
+    ),
+    height_cm: parsePositiveFloat(
+      existing?.height_cm,
+      parsePositiveFloat(env.ENVIA_DEFAULT_HEIGHT_CM, 10)
+    ),
     declared_value_cents: parseNonNegativeCents(existing?.declared_value_cents, totalAmountCents),
-    content: cleanText(existing?.content) || cleanText(env.ENVIA_DEFAULT_CONTENT) || 'Joyeria Lumea Imperium',
+    content:
+      cleanText(existing?.content) ||
+      cleanText(env.ENVIA_DEFAULT_CONTENT) ||
+      'Joyeria Lumea Imperium',
     notes: cleanText(existing?.notes)
   }
+}
+
+function distributeDeclaredValueAcrossBoxes(
+  totalAmountCents: number,
+  unitsPerBox: number[]
+): number[] {
+  const totalUnits = unitsPerBox.reduce((sum, units) => sum + units, 0)
+  if (totalUnits <= 0) return unitsPerBox.map(() => 0)
+
+  let assigned = 0
+  return unitsPerBox.map((units, index) => {
+    if (index === unitsPerBox.length - 1) {
+      return Math.max(0, totalAmountCents - assigned)
+    }
+    const value = Math.round((totalAmountCents * units) / totalUnits)
+    assigned += value
+    return value
+  })
+}
+
+function buildAutoBoxPlan(
+  baseline: Record<string, unknown>,
+  totalAmountCents: number,
+  totalUnits: number,
+  productsPerBox: number
+): Record<string, unknown> {
+  const unitBuckets: number[] = []
+  let remaining = totalUnits
+  while (remaining > 0) {
+    const unitsInBox = Math.min(productsPerBox, remaining)
+    unitBuckets.push(unitsInBox)
+    remaining -= unitsInBox
+  }
+
+  const declaredValues = distributeDeclaredValueAcrossBoxes(totalAmountCents, unitBuckets)
+
+  return {
+    products_per_box: productsPerBox,
+    boxes: unitBuckets.map((unitsInBox, index) => ({
+      guide_index: index + 1,
+      units_in_box: unitsInBox,
+      weight_kg: baseline.weight_kg,
+      length_cm: baseline.length_cm,
+      width_cm: baseline.width_cm,
+      height_cm: baseline.height_cm,
+      declared_value_cents: declaredValues[index] ?? 0,
+      content: baseline.content,
+      notes: baseline.notes || null
+    }))
+  }
+}
+
+function normalizeBoxPlanInput(
+  payload: ShipmentQuotePayload | null | undefined,
+  existingParcel: Record<string, unknown> | null,
+  baseline: Record<string, unknown>,
+  totalAmountCents: number,
+  totalUnits: number
+): { ok: true; boxPlan: Record<string, unknown> | null } | { ok: false; error: string } {
+  if (totalUnits <= 1) {
+    return { ok: true, boxPlan: null }
+  }
+
+  const hasBoxPlanField = Boolean(
+    payload && Object.prototype.hasOwnProperty.call(payload, 'box_plan')
+  )
+  const rawBoxPlan = hasBoxPlanField
+    ? toObjectRecord(payload?.box_plan)
+    : toObjectRecord(existingParcel?.box_plan)
+
+  if (!rawBoxPlan) {
+    return { ok: true, boxPlan: null }
+  }
+
+  const parsedProductsPerBox = parsePositiveInteger(rawBoxPlan.products_per_box, null)
+  const rawBoxes = Array.isArray(rawBoxPlan.boxes) ? rawBoxPlan.boxes : []
+  if (rawBoxes.length === 0) {
+    if (!parsedProductsPerBox || parsedProductsPerBox >= totalUnits) {
+      return { ok: true, boxPlan: null }
+    }
+    return {
+      ok: true,
+      boxPlan: buildAutoBoxPlan(baseline, totalAmountCents, totalUnits, parsedProductsPerBox)
+    }
+  }
+
+  const normalizedBoxes = rawBoxes
+    .map((entry, index) => {
+      const record = toObjectRecord(entry)
+      if (!record) return null
+      const unitsInBox = parsePositiveInteger(record.units_in_box, null)
+      const weightKg = parsePositiveFloat(record.weight_kg, baseline.weight_kg as number | null)
+      const lengthCm = parsePositiveFloat(record.length_cm, baseline.length_cm as number | null)
+      const widthCm = parsePositiveFloat(record.width_cm, baseline.width_cm as number | null)
+      const heightCm = parsePositiveFloat(record.height_cm, baseline.height_cm as number | null)
+      const declaredValueCents = parseNonNegativeCents(
+        record.declared_value_cents,
+        baseline.declared_value_cents as number | null
+      )
+
+      if (
+        !unitsInBox ||
+        !weightKg ||
+        !lengthCm ||
+        !widthCm ||
+        !heightCm ||
+        declaredValueCents == null
+      ) {
+        return null
+      }
+
+      return {
+        guide_index: index + 1,
+        units_in_box: unitsInBox,
+        weight_kg: weightKg,
+        length_cm: lengthCm,
+        width_cm: widthCm,
+        height_cm: heightCm,
+        declared_value_cents: declaredValueCents,
+        content: cleanText(record.content) || String(baseline.content || ''),
+        notes: cleanText(record.notes)
+      }
+    })
+    .filter(Boolean)
+
+  if (normalizedBoxes.length <= 1) {
+    return { ok: true, boxPlan: null }
+  }
+
+  const typedBoxes = normalizedBoxes as Array<Record<string, unknown>>
+  const unitsAssigned = typedBoxes.reduce((sum, box) => sum + Number(box.units_in_box || 0), 0)
+  if (unitsAssigned !== totalUnits) {
+    return {
+      ok: false,
+      error: `La distribucion de cajas suma ${unitsAssigned} unidades y el pedido requiere ${totalUnits}.`
+    }
+  }
+
+  const productsPerBox =
+    parsedProductsPerBox ||
+    typedBoxes.reduce((max, box) => Math.max(max, Number(box.units_in_box || 0)), 1)
+
+  return {
+    ok: true,
+    boxPlan: {
+      products_per_box: productsPerBox,
+      boxes: typedBoxes
+    }
+  }
+}
+
+function resolveShipmentBoxes(parcel: Record<string, unknown>): Record<string, unknown>[] {
+  const boxPlan = toObjectRecord(parcel.box_plan)
+  const rawBoxes = Array.isArray(boxPlan?.boxes) ? boxPlan.boxes : []
+  const normalizedBoxes = rawBoxes
+    .map((entry) => toObjectRecord(entry))
+    .filter(Boolean)
+    .map(
+      (box) =>
+        compactObject({
+          guide_index: box?.guide_index,
+          units_in_box: box?.units_in_box,
+          weight_kg: box?.weight_kg,
+          length_cm: box?.length_cm,
+          width_cm: box?.width_cm,
+          height_cm: box?.height_cm,
+          declared_value_cents: box?.declared_value_cents,
+          content: box?.content,
+          notes: box?.notes
+        }) as Record<string, unknown>
+    )
+
+  if (normalizedBoxes.length > 1) {
+    return normalizedBoxes
+  }
+
+  return [
+    compactObject({
+      weight_kg: parcel.weight_kg,
+      length_cm: parcel.length_cm,
+      width_cm: parcel.width_cm,
+      height_cm: parcel.height_cm,
+      declared_value_cents: parcel.declared_value_cents,
+      content: parcel.content,
+      notes: parcel.notes
+    }) as Record<string, unknown>
+  ]
 }
 
 function normalizeParcelInput(
   env: Env,
   payload: ShipmentQuotePayload | null | undefined,
   currentShipment: Record<string, unknown> | null,
-  totalAmountCents: number
+  totalAmountCents: number,
+  totalUnits: number
 ): { ok: true; parcel: Record<string, unknown> } | { ok: false; error: string } {
   const existingParcel = toObjectRecord(currentShipment?.parcel)
   const baseline = buildDefaultParcel(env, totalAmountCents, existingParcel)
@@ -4170,10 +4636,27 @@ function normalizeParcelInput(
     return { ok: false, error: 'Peso y dimensiones del paquete son obligatorios.' }
   }
 
+  const boxPlanResult = normalizeBoxPlanInput(
+    payload,
+    existingParcel,
+    parcel,
+    totalAmountCents,
+    totalUnits || 1
+  )
+  if (!boxPlanResult.ok) {
+    return boxPlanResult
+  }
+
+  if (boxPlanResult.boxPlan) {
+    ;(parcel as Record<string, unknown>).box_plan = boxPlanResult.boxPlan
+  }
+
   return { ok: true, parcel }
 }
 
-function getOrderShippingDestination(order: Record<string, unknown>): Record<string, unknown> | null {
+function getOrderShippingDestination(
+  order: Record<string, unknown>
+): Record<string, unknown> | null {
   const shippingAddress = toObjectRecord(order.shipping_address)
   const address = toObjectRecord(shippingAddress?.address)
   if (!address) return null
@@ -4341,9 +4824,10 @@ function buildLabelPackagePayload(parcel: Record<string, unknown>): Record<strin
   }) as Record<string, unknown>
 }
 
-function normalizeRequestedShipmentFilters(
-  payload: ShipmentQuotePayload | null | undefined
-): { carrier: string | null; service: string | null } {
+function normalizeRequestedShipmentFilters(payload: ShipmentQuotePayload | null | undefined): {
+  carrier: string | null
+  service: string | null
+} {
   const carrier = cleanText(payload?.carrier)
   const service = carrier ? cleanText(payload?.service) : null
   return { carrier, service }
@@ -4353,7 +4837,9 @@ function normalizeShipmentQuoteMode(
   value: unknown,
   fallback: ShipmentQuoteMode = 'auto'
 ): ShipmentQuoteMode {
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'manual') return 'manual'
   if (normalized === 'auto') return 'auto'
   return fallback
@@ -4439,7 +4925,8 @@ async function clearShipmentQuoteState(
     quote_amount_cents: null,
     envia_request_json: null,
     envia_response_json: null,
-    last_error: null
+    last_error: null,
+    last_error_code: null
   })
 }
 
@@ -4613,10 +5100,7 @@ function assertQuoteSnapshotMatches(
   }
 
   const storedRequest = quoteSnapshot.request || toObjectRecord(shipment?.envia_request)
-  if (
-    !storedRequest ||
-    stableStringify(storedRequest) !== stableStringify(currentRequestPayload)
-  ) {
+  if (!storedRequest || stableStringify(storedRequest) !== stableStringify(currentRequestPayload)) {
     throw new HttpError(
       'Cambiaste datos del paquete. Vuelve a cotizar antes de aprobar.',
       409,
@@ -4659,11 +5143,13 @@ async function buildQuoteRequestPayload(
 
   const carrier = cleanText(requestedCarrier)
   const service = carrier ? cleanText(requestedService) : null
+  const boxes = resolveShipmentBoxes(parcel)
 
   return compactObject({
     origin: buildAddressPayload(origin),
     destination: buildAddressPayload(destination),
-    packages: [buildPackagePayload(parcel)],
+    packages: boxes.map((box) => buildPackagePayload(box)),
+    box_plan: toObjectRecord(parcel.box_plan),
     shipment:
       carrier || service
         ? {
@@ -4674,16 +5160,228 @@ async function buildQuoteRequestPayload(
   }) as Record<string, unknown>
 }
 
-async function buildLabelRequestPayload(
+function buildProviderQuotePayloads(
+  requestPayload: Record<string, unknown>,
+  requestedCarrier: string | null = null,
+  requestedService: string | null = null
+): Record<string, unknown>[] {
+  const combinedPayload = buildCombinedQuotePayload(
+    requestPayload,
+    requestedCarrier,
+    requestedService
+  )
+  const packages = Array.isArray(combinedPayload.packages) ? combinedPayload.packages : []
+
+  return packages.map(
+    (pkg) =>
+      ({
+        ...combinedPayload,
+        packages: [pkg]
+      }) as Record<string, unknown>
+  )
+}
+
+function buildCombinedQuotePayload(
+  requestPayload: Record<string, unknown>,
+  requestedCarrier: string | null = null,
+  requestedService: string | null = null
+): Record<string, unknown> {
+  const shipmentRecord = toObjectRecord(requestPayload.shipment)
+  const carrier = cleanText(requestedCarrier) || cleanText(shipmentRecord?.carrier)
+  const service =
+    carrier && (cleanText(requestedService) || cleanText(shipmentRecord?.service))
+      ? cleanText(requestedService) || cleanText(shipmentRecord?.service)
+      : null
+
+  return compactObject({
+    origin: requestPayload.origin,
+    destination: requestPayload.destination,
+    packages: Array.isArray(requestPayload.packages) ? requestPayload.packages : [],
+    shipment:
+      carrier || service
+        ? {
+            carrier,
+            service
+          }
+        : undefined
+  }) as Record<string, unknown>
+}
+
+function aggregateBoxQuoteCollections(
+  collections: Array<{ quotes: NormalizedQuote[] }>
+): NormalizedQuote[] {
+  if (!collections.length) return []
+  if (collections.some((collection) => collection.quotes.length === 0)) return []
+
+  const totals = new Map<
+    string,
+    {
+      carrier: string
+      service: string
+      amount_cents: number
+      currency: string
+      estimated_days: number | null
+      raws: unknown[]
+      matchedBoxes: number
+    }
+  >()
+
+  collections[0].quotes.forEach((quote) => {
+    totals.set(`${quote.carrier}::${quote.service}`, {
+      carrier: quote.carrier,
+      service: quote.service,
+      amount_cents: quote.amount_cents,
+      currency: quote.currency,
+      estimated_days: quote.estimated_days,
+      raws: [quote.raw],
+      matchedBoxes: 1
+    })
+  })
+
+  for (let boxIndex = 1; boxIndex < collections.length; boxIndex += 1) {
+    const currentMap = new Map<string, NormalizedQuote>(
+      collections[boxIndex].quotes.map(
+        (quote) => [`${quote.carrier}::${quote.service}`, quote] as const
+      )
+    )
+    for (const [key, current] of [...totals.entries()]) {
+      const nextQuote = currentMap.get(key)
+      if (!nextQuote || nextQuote.currency.toUpperCase() !== current.currency.toUpperCase()) {
+        totals.delete(key)
+        continue
+      }
+      current.amount_cents += nextQuote.amount_cents
+      current.estimated_days =
+        current.estimated_days == null
+          ? nextQuote.estimated_days
+          : nextQuote.estimated_days == null
+            ? current.estimated_days
+            : Math.max(current.estimated_days, nextQuote.estimated_days)
+      current.raws.push(nextQuote.raw)
+      current.matchedBoxes += 1
+    }
+  }
+
+  return [...totals.values()]
+    .filter((quote) => quote.matchedBoxes === collections.length)
+    .map((quote) => ({
+      carrier: quote.carrier,
+      service: quote.service,
+      amount_cents: quote.amount_cents,
+      currency: quote.currency,
+      estimated_days: quote.estimated_days,
+      raw: {
+        boxes: quote.raws
+      }
+    }))
+    .sort((left, right) => left.amount_cents - right.amount_cents)
+}
+
+async function quoteSplitShipments(
+  env: Env,
+  providerPayloads: Record<string, unknown>[]
+): Promise<{ payload: Record<string, unknown>; quotes: NormalizedQuote[] }> {
+  const boxResults = await Promise.all(
+    providerPayloads.map(async (providerPayload, index) => {
+      try {
+        const response = await quoteShipment(env, providerPayload)
+        return {
+          box_index: index + 1,
+          ok: true,
+          payload: response.payload,
+          quotes: response.quotes,
+          error: null
+        }
+      } catch (error) {
+        return {
+          box_index: index + 1,
+          ok: false,
+          payload: error instanceof EnviaRequestError ? error.payload : null,
+          quotes: [] as NormalizedQuote[],
+          error: getErrorMessage(error)
+        }
+      }
+    })
+  )
+
+  return {
+    payload: {
+      requests: providerPayloads,
+      boxes: boxResults.map((result) => ({
+        box_index: result.box_index,
+        ok: result.ok,
+        error: result.error,
+        payload: result.payload
+      }))
+    },
+    quotes: aggregateBoxQuoteCollections(boxResults)
+  }
+}
+
+async function quoteShipmentWithBoxFallback(
+  env: Env,
+  requestPayload: Record<string, unknown>,
+  providerPayloads: Record<string, unknown>[]
+): Promise<{ payload: unknown; quotes: NormalizedQuote[] }> {
+  try {
+    const combinedResult = await quoteShipment(env, requestPayload)
+    if (combinedResult.quotes.length > 0 || providerPayloads.length <= 1) {
+      return combinedResult
+    }
+
+    const splitResult = await quoteSplitShipments(env, providerPayloads)
+    if (splitResult.quotes.length > 0) {
+      return {
+        payload: {
+          strategy: 'split_fallback',
+          combined_payload: combinedResult.payload,
+          split_payload: splitResult.payload
+        },
+        quotes: splitResult.quotes
+      }
+    }
+
+    return {
+      payload: {
+        strategy: 'combined_then_split',
+        combined_payload: combinedResult.payload,
+        split_payload: splitResult.payload
+      },
+      quotes: []
+    }
+  } catch (error) {
+    if (providerPayloads.length <= 1) {
+      throw error
+    }
+
+    const splitResult = await quoteSplitShipments(env, providerPayloads)
+    if (splitResult.quotes.length > 0) {
+      return {
+        payload: {
+          strategy: 'split_after_combined_error',
+          combined_error: getErrorMessage(error),
+          combined_error_payload: error instanceof EnviaRequestError ? error.payload : null,
+          split_payload: splitResult.payload
+        },
+        quotes: splitResult.quotes
+      }
+    }
+
+    throw error
+  }
+}
+
+async function buildLabelRequestPayloads(
   env: Env,
   order: Record<string, unknown>,
   parcel: Record<string, unknown>,
   quote: NormalizedQuote
 ): Promise<{
-  payload: Record<string, unknown>
+  requests: Record<string, unknown>[]
   settingsSource: LabelSettingsSource
   shipmentTypeApplied: number
   missingFields: string[]
+  boxPlan: Record<string, unknown> | null
 }> {
   const origin = await getOriginAddress(env)
   const destination = getOrderShippingDestination(order)
@@ -4692,23 +5390,30 @@ async function buildLabelRequestPayload(
   }
 
   const settingsResolution = await resolveLabelSettings(env, quote.carrier)
-  const payload = compactObject({
-    origin: buildLabelAddressPayload(origin),
-    destination: buildLabelAddressPayload(destination),
-    packages: [buildLabelPackagePayload(parcel)],
-    shipment: {
-      carrier: quote.carrier,
-      service: quote.service,
-      type: ENVIA_LABEL_SHIPMENT_TYPE
-    },
-    settings: settingsResolution.settings
-  }) as Record<string, unknown>
+  const boxes = resolveShipmentBoxes(parcel)
+  const requests = boxes.map(
+    (box) =>
+      compactObject({
+        origin: buildLabelAddressPayload(origin),
+        destination: buildLabelAddressPayload(destination),
+        packages: [buildLabelPackagePayload(box)],
+        shipment: {
+          carrier: quote.carrier,
+          service: quote.service,
+          type: ENVIA_LABEL_SHIPMENT_TYPE
+        },
+        settings: settingsResolution.settings
+      }) as Record<string, unknown>
+  )
 
   return {
-    payload,
+    requests,
     settingsSource: settingsResolution.source,
     shipmentTypeApplied: ENVIA_LABEL_SHIPMENT_TYPE,
-    missingFields: listMissingLabelPayloadFields(payload)
+    missingFields: requests.flatMap((payload, index) =>
+      listMissingLabelPayloadFields(payload).map((field) => `requests[${index}].${field}`)
+    ),
+    boxPlan: toObjectRecord(parcel.box_plan)
   }
 }
 
@@ -4757,7 +5462,10 @@ async function upsertShipmentRow(
     'rejected_at',
     'rejected_reason',
     'last_sync_at',
-    'last_error'
+    'last_error',
+    'last_error_code',
+    'tracking_sync_paused_at',
+    'tracking_sync_pause_reason'
   ]
 
   const clauses: string[] = []
@@ -4787,7 +5495,14 @@ async function upsertShipmentRow(
         ) VALUES (?, 'envia', ?, 'pending', 'pending', 'MXN', datetime('now'), datetime('now'))
       `
     )
-      .bind(orderId, String(env.ENVIA_MODE || 'test').trim().toLowerCase() === 'prod' ? 'prod' : 'test')
+      .bind(
+        orderId,
+        String(env.ENVIA_MODE || 'test')
+          .trim()
+          .toLowerCase() === 'prod'
+          ? 'prod'
+          : 'test'
+      )
       .run()
   }
 
@@ -4828,14 +5543,26 @@ function decodeBase64ToBytes(value: string): Uint8Array {
   return bytes
 }
 
+function sanitizeShipmentLabelPart(value: string | null, fallback: string): string {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return cleaned || fallback
+}
+
 async function storeShipmentLabel(
   env: Env,
   orderId: string,
-  shipment: NormalizedShipmentResult
+  shipment: NormalizedShipmentResult,
+  guideIndex: number
 ): Promise<string | null> {
+  const trackingPart = sanitizeShipmentLabelPart(shipment.tracking_number, `guide-${guideIndex}`)
+  const key = `labels/${sanitizeShipmentLabelPart(orderId, 'pedido')}/${String(guideIndex).padStart(2, '0')}-${trackingPart}.pdf`
+
   if (shipment.label_base64) {
     const bytes = decodeBase64ToBytes(shipment.label_base64)
-    const key = `labels/${orderId}.pdf`
     await env.ASSETS_BUCKET.put(key, bytes, {
       httpMetadata: { contentType: 'application/pdf' }
     })
@@ -4844,7 +5571,6 @@ async function storeShipmentLabel(
 
   if (shipment.label_url) {
     const buffer = await downloadLabelBinary(env, shipment.label_url)
-    const key = `labels/${orderId}.pdf`
     await env.ASSETS_BUCKET.put(key, buffer, {
       httpMetadata: { contentType: 'application/pdf' }
     })
@@ -4852,6 +5578,109 @@ async function storeShipmentLabel(
   }
 
   return null
+}
+
+async function replaceShipmentGuides(
+  env: Env,
+  orderId: string,
+  guides: Array<Record<string, unknown>>
+): Promise<void> {
+  await ensureOrderShipmentsSchema(env, 'replace-shipment-guides')
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare('DELETE FROM order_shipment_guides WHERE order_id = ?').bind(orderId)
+  ]
+
+  guides.forEach((guide, index) => {
+    statements.push(
+      env.DB.prepare(
+        `
+          INSERT INTO order_shipment_guides (
+            order_id,
+            guide_index,
+            carrier,
+            service,
+            tracking_number,
+            tracking_url,
+            envia_shipment_id,
+            label_r2_key,
+            parcel_json,
+            envia_request_json,
+            envia_response_json,
+            shipment_status,
+            last_error
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).bind(
+        orderId,
+        Number(guide.guide_index || index + 1),
+        cleanText(guide.carrier),
+        cleanText(guide.service),
+        cleanText(guide.tracking_number),
+        cleanText(guide.tracking_url),
+        cleanText(guide.envia_shipment_id),
+        cleanText(guide.label_r2_key),
+        safeStringify(guide.parcel),
+        safeStringify(guide.envia_request),
+        safeStringify(guide.envia_response),
+        cleanText(guide.shipment_status) || 'pending',
+        cleanText(guide.last_error)
+      )
+    )
+  })
+
+  await env.DB.batch(statements)
+}
+
+function summarizeShipmentStatusFromGuides(
+  guides: Array<{ shipment_status: string | null | undefined }>
+): ShippingStatus {
+  const statuses = guides.map((guide) => normalizeWorkerShippingStatus(guide.shipment_status))
+  if (!statuses.length) return 'pending'
+  if (statuses.every((status) => status === 'delivered')) return 'delivered'
+  if (statuses.includes('lost')) return 'lost'
+  if (statuses.includes('cancelled')) return 'cancelled'
+  if (statuses.includes('in_transit')) return 'in_transit'
+  if (statuses.includes('preparing')) return 'preparing'
+  return 'pending'
+}
+
+function summarizeShipmentHeaderFromGuides(guides: Array<Record<string, unknown>>): {
+  shipment_status: ShippingStatus
+  tracking_number: string | null
+  tracking_url: string | null
+  carrier: string | null
+  service: string | null
+  envia_shipment_id: string | null
+  label_r2_key: string | null
+} {
+  const firstGuide = guides[0] || {}
+  return {
+    shipment_status: summarizeShipmentStatusFromGuides(
+      guides.map((guide) => ({
+        shipment_status: cleanText(guide.shipment_status)
+      }))
+    ),
+    tracking_number: cleanText(firstGuide.tracking_number),
+    tracking_url: cleanText(firstGuide.tracking_url),
+    carrier: cleanText(firstGuide.carrier),
+    service: cleanText(firstGuide.service),
+    envia_shipment_id: cleanText(firstGuide.envia_shipment_id),
+    label_r2_key: cleanText(firstGuide.label_r2_key)
+  }
+}
+
+async function pauseTrackingSyncForShipment(
+  env: Env,
+  orderId: string,
+  reason: string
+): Promise<void> {
+  await upsertShipmentRow(env, orderId, {
+    tracking_sync_paused_at: new Date().toISOString(),
+    tracking_sync_pause_reason: reason,
+    last_sync_at: new Date().toISOString(),
+    last_error: `Sync programado pausado: ${reason}`,
+    last_error_code: SHIPMENT_ERROR_CODE_TRACKING_FORBIDDEN
+  })
 }
 
 async function handleGetOrderById(
@@ -5048,16 +5877,12 @@ function selectQuote(
   const requestedService = filters.service?.toLowerCase() || null
   if (!requestedCarrier) return null
 
-  const carrierQuotes = quotes.filter(
-    (quote) => quote.carrier.toLowerCase() === requestedCarrier
-  )
+  const carrierQuotes = quotes.filter((quote) => quote.carrier.toLowerCase() === requestedCarrier)
   if (!carrierQuotes.length) return null
 
   if (!requestedService) return carrierQuotes[0]
 
-  return (
-    carrierQuotes.find((quote) => quote.service.toLowerCase() === requestedService) || null
-  )
+  return carrierQuotes.find((quote) => quote.service.toLowerCase() === requestedService) || null
 }
 
 async function quoteOrderShipment(
@@ -5080,7 +5905,8 @@ async function quoteOrderShipment(
     env,
     payload,
     currentShipment,
-    Number(order.total_amount_cents || 0)
+    Number(order.total_amount_cents || 0),
+    Number(toObjectRecord(order.summary)?.units_total || 1)
   )
   if (!parcelResult.ok) {
     throw new Error(parcelResult.error)
@@ -5112,6 +5938,11 @@ async function quoteOrderShipment(
     requestedCarrier,
     requestedService
   )
+  const providerQuotePayloads = buildProviderQuotePayloads(
+    requestPayload,
+    requestedCarrier,
+    requestedService
+  )
 
   let quoteResult: { payload: unknown; quotes: NormalizedQuote[] } = {
     payload: null,
@@ -5121,7 +5952,7 @@ async function quoteOrderShipment(
   let attemptedCarriers: string[] = requestedCarrier ? [requestedCarrier] : []
   if (mode === 'manual') {
     try {
-      quoteResult = await quoteShipment(env, requestPayload)
+      quoteResult = await quoteShipmentWithBoxFallback(env, requestPayload, providerQuotePayloads)
       aggregatedQuotes = [...quoteResult.quotes]
     } catch (error) {
       quoteResult = {
@@ -5132,7 +5963,8 @@ async function quoteOrderShipment(
       await upsertShipmentRow(env, orderId, {
         parcel_json: safeStringify(parcelResult.parcel),
         envia_request_json: safeStringify(requestPayload),
-        envia_response_json: error instanceof EnviaRequestError ? safeStringify(error.payload) : null,
+        envia_response_json:
+          error instanceof EnviaRequestError ? safeStringify(error.payload) : null,
         last_error: message
       })
       await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
@@ -5154,7 +5986,7 @@ async function quoteOrderShipment(
 
     if (discoveredCarriers.length === 0) {
       try {
-        quoteResult = await quoteShipment(env, requestPayload)
+        quoteResult = await quoteShipmentWithBoxFallback(env, requestPayload, providerQuotePayloads)
         aggregatedQuotes = [...quoteResult.quotes]
       } catch (error) {
         quoteResult = {
@@ -5164,7 +5996,7 @@ async function quoteOrderShipment(
       }
     } else {
       const quoteMap = new Map<string, NormalizedQuote>()
-      let providerPayload: unknown = null
+      const providerPayloads: unknown[] = []
       let carrierIndex = 0
       const concurrency = Math.min(4, discoveredCarriers.length)
 
@@ -5175,25 +6007,31 @@ async function quoteOrderShipment(
             const carrierName = discoveredCarriers[nextIndex]
             if (!carrierName) return
 
-            const carrierPayload = {
-              ...requestPayload,
-              shipment: {
-                carrier: carrierName
-              }
-            } as Record<string, unknown>
-
+            const carrierRequestPayload = buildCombinedQuotePayload(
+              requestPayload,
+              carrierName,
+              null
+            )
+            const carrierPayloads = buildProviderQuotePayloads(requestPayload, carrierName, null)
             try {
-              const perCarrierResult = await quoteShipment(env, carrierPayload)
-              if (providerPayload == null && perCarrierResult.payload != null) {
-                providerPayload = perCarrierResult.payload
-              }
+              const perCarrierResult = await quoteShipmentWithBoxFallback(
+                env,
+                carrierRequestPayload,
+                carrierPayloads
+              )
+              providerPayloads.push({
+                carrier: carrierName,
+                payload: perCarrierResult.payload
+              })
               for (const quote of perCarrierResult.quotes) {
                 quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
               }
             } catch (error) {
-              if (providerPayload == null && error instanceof EnviaRequestError) {
-                providerPayload = error.payload
-              }
+              providerPayloads.push({
+                carrier: carrierName,
+                error: getErrorMessage(error),
+                payload: error instanceof EnviaRequestError ? error.payload : null
+              })
             }
           }
         })
@@ -5203,9 +6041,35 @@ async function quoteOrderShipment(
         (left, right) => left.amount_cents - right.amount_cents
       )
       quoteResult = {
-        payload: providerPayload,
+        payload: {
+          carriers: providerPayloads
+        },
         quotes: aggregatedQuotes
       }
+    }
+  }
+
+  if (mode === 'manual' && providerQuotePayloads.length === 1 && aggregatedQuotes.length === 0) {
+    const boxPayload = toObjectRecord(quoteResult.payload)
+    const firstBox = Array.isArray(boxPayload?.boxes) ? toObjectRecord(boxPayload?.boxes[0]) : null
+    const providerPayload = firstBox?.payload
+    const providerError = firstBox?.error
+    if (providerError || providerPayload) {
+      const message = String(providerError || 'Envia no devolvio una cotizacion valida.')
+      await upsertShipmentRow(env, orderId, {
+        parcel_json: safeStringify(parcelResult.parcel),
+        envia_request_json: safeStringify(requestPayload),
+        envia_response_json: safeStringify(providerPayload),
+        last_error: message
+      })
+      await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
+        requested_carrier: requestedCarrier,
+        requested_service: requestedService,
+        mode,
+        error: message,
+        payload: providerPayload
+      })
+      throw new Error(message)
     }
   }
 
@@ -5253,7 +6117,8 @@ async function quoteOrderShipment(
     service: selected.service,
     envia_request_json: safeStringify(requestPayload),
     envia_response_json: safeStringify(quoteSnapshot),
-    last_error: null
+    last_error: null,
+    last_error_code: null
   })
   await updateOrderShippingStatus(
     env,
@@ -5291,18 +6156,70 @@ async function syncOrderShipmentStatus(
     throw new Error('El pedido no tiene registro de envio.')
   }
 
-  const tracking = await trackShipment(env, buildTrackingRequestPayload(shipment))
+  const guideRecords = Array.isArray(shipment.guides)
+    ? shipment.guides.map((guide) => toObjectRecord(guide)).filter(Boolean)
+    : []
+  const guidesToSync =
+    guideRecords.length > 0 ? (guideRecords as Record<string, unknown>[]) : [shipment]
+  const syncedGuides: Array<Record<string, unknown>> = []
+
+  for (const guide of guidesToSync) {
+    try {
+      const tracking = await trackShipment(env, buildTrackingRequestPayload(guide))
+      syncedGuides.push({
+        guide_index: Number(guide.guide_index || syncedGuides.length + 1),
+        carrier: tracking.carrier || cleanText(guide.carrier),
+        service: cleanText(guide.service),
+        tracking_number: tracking.tracking_number || cleanText(guide.tracking_number),
+        tracking_url: tracking.tracking_url || cleanText(guide.tracking_url),
+        envia_shipment_id: cleanText(guide.envia_shipment_id),
+        label_r2_key: cleanText(guide.label_r2_key),
+        parcel: toObjectRecord(guide.parcel) || safeParseJson(String(guide.parcel_json || '')),
+        envia_request: guide.envia_request ?? safeParseJson(String(guide.envia_request_json || '')),
+        envia_response: tracking.raw,
+        shipment_status: tracking.status,
+        last_error: null
+      })
+    } catch (error) {
+      if (source === 'scheduled' && isTrackingForbiddenError(error)) {
+        const reason =
+          'Envia tracking devolvio HTTP 403 para este envio. Revisa carrier/cuenta y reintenta manualmente.'
+        await pauseTrackingSyncForShipment(env, orderId, reason)
+        await insertShipmentEvent(env, orderId, 'sync_paused', source, {
+          error: getErrorMessage(error),
+          payload: error instanceof EnviaRequestError ? error.payload : null
+        })
+        const refreshed = await fetchOrderDetail(env, orderId)
+        return { success: true, order: refreshed }
+      }
+      throw error
+    }
+  }
+
+  await replaceShipmentGuides(env, orderId, syncedGuides)
+  const summary = summarizeShipmentHeaderFromGuides(syncedGuides)
   await upsertShipmentRow(env, orderId, {
-    shipment_status: tracking.status,
-    tracking_url: tracking.tracking_url || cleanText(shipment.tracking_url),
-    tracking_number: tracking.tracking_number || cleanText(shipment.tracking_number),
-    carrier: tracking.carrier || cleanText(shipment.carrier),
-    envia_response_json: safeStringify(tracking.raw),
+    shipment_status: summary.shipment_status,
+    tracking_url: summary.tracking_url || cleanText(shipment.tracking_url),
+    tracking_number: summary.tracking_number || cleanText(shipment.tracking_number),
+    carrier: summary.carrier || cleanText(shipment.carrier),
+    service: summary.service || cleanText(shipment.service),
+    envia_shipment_id: summary.envia_shipment_id || cleanText(shipment.envia_shipment_id),
+    label_r2_key: summary.label_r2_key || cleanText(shipment.label_r2_key),
+    envia_response_json: safeStringify({
+      guides: syncedGuides.map((guide) => guide.envia_response)
+    }),
     last_sync_at: new Date().toISOString(),
-    last_error: null
+    last_error: null,
+    last_error_code: null,
+    tracking_sync_paused_at: null,
+    tracking_sync_pause_reason: null
   })
-  await updateOrderShippingStatus(env, orderId, tracking.status)
-  await insertShipmentEvent(env, orderId, 'synced', source, tracking.raw)
+  await updateOrderShippingStatus(env, orderId, summary.shipment_status)
+  await insertShipmentEvent(env, orderId, 'synced', source, {
+    guide_count: syncedGuides.length,
+    guides: syncedGuides
+  })
 
   const refreshed = await fetchOrderDetail(env, orderId)
   return { success: true, order: refreshed }
@@ -5345,7 +6262,10 @@ async function handleGetPendingShipments(
           os.rejected_at,
           os.rejected_reason,
           os.last_sync_at,
-          os.last_error
+          os.last_error,
+          os.last_error_code,
+          os.tracking_sync_paused_at,
+          os.tracking_sync_pause_reason
         FROM order_shipments os
         INNER JOIN orders o ON o.id = os.order_id
         WHERE o.status <> 'unpaid'
@@ -5450,7 +6370,10 @@ async function handleGetShipments(
           os.rejected_at,
           os.rejected_reason,
           os.last_sync_at,
-          os.last_error
+          os.last_error,
+          os.last_error_code,
+          os.tracking_sync_paused_at,
+          os.tracking_sync_pause_reason
         FROM order_shipments os
         INNER JOIN orders o ON o.id = os.order_id
         WHERE ${where.join(' AND ')}
@@ -5586,7 +6509,8 @@ async function handleApproveShipmentByOrderId(
       env,
       payload,
       currentShipment,
-      Number(order.total_amount_cents || 0)
+      Number(order.total_amount_cents || 0),
+      Number(toObjectRecord(order.summary)?.units_total || 1)
     )
     if (!parcelResult.ok) {
       throw new Error(parcelResult.error)
@@ -5617,54 +6541,144 @@ async function handleApproveShipmentByOrderId(
       mode
     )
 
-    const labelBuild = await buildLabelRequestPayload(env, order, parcelResult.parcel, selectedQuote)
-    const labelPayload = labelBuild.payload
-    let created: NormalizedShipmentResult
+    const labelBuild = await buildLabelRequestPayloads(
+      env,
+      order,
+      parcelResult.parcel,
+      selectedQuote
+    )
+    const labelRequests = labelBuild.requests
+    const createdGuides: Array<Record<string, unknown>> = []
     try {
-      created = await createShippingLabel(env, labelPayload)
+      for (let index = 0; index < labelRequests.length; index += 1) {
+        const labelPayload = labelRequests[index]
+        const created = await createShippingLabel(env, labelPayload)
+        const labelKey = await storeShipmentLabel(env, orderId, created, index + 1)
+        const requestPackage = toObjectRecord(
+          Array.isArray(labelPayload.packages)
+            ? labelPayload.packages[index > -1 ? 0 : index]
+            : null
+        )
+        createdGuides.push({
+          guide_index: index + 1,
+          carrier: created.carrier || selectedQuote.carrier,
+          service: created.service || selectedQuote.service,
+          tracking_number: created.tracking_number,
+          tracking_url: created.tracking_url,
+          envia_shipment_id: created.shipment_id,
+          label_r2_key: labelKey,
+          parcel: requestPackage,
+          envia_request: labelPayload,
+          envia_response: created.raw,
+          shipment_status: normalizeWorkerShippingStatus(created.status || 'preparing'),
+          last_error: null
+        })
+      }
     } catch (error) {
-      const message = getErrorMessage(error)
+      const hasPartialApprovalFailure = createdGuides.length > 0
+      const hasCarrierAccountMismatch = isCarrierAccountMismatchError(error)
+      const errorCode = hasPartialApprovalFailure
+        ? SHIPMENT_ERROR_CODE_APPROVAL_PARTIAL_FAILURE
+        : hasCarrierAccountMismatch
+          ? SHIPMENT_ERROR_CODE_CARRIER_ACCOUNT_MISMATCH
+          : null
+      const message = hasPartialApprovalFailure
+        ? buildPartialApprovalFailureMessage(createdGuides)
+        : hasCarrierAccountMismatch
+          ? buildCarrierAccountMismatchMessage(selectedQuote)
+          : getErrorMessage(error)
+      const requestPayloadForError =
+        labelRequests.length === 1
+          ? labelRequests[0]
+          : { requests: labelRequests, box_plan: labelBuild.boxPlan }
+      const responsePayloadForError = hasPartialApprovalFailure
+        ? {
+            request: requestPayloadForError,
+            created_guides: createdGuides,
+            failed_request_index: createdGuides.length + 1,
+            error_message: getErrorMessage(error),
+            error_payload: error instanceof EnviaRequestError ? error.payload : null
+          }
+        : error instanceof EnviaRequestError
+          ? error.payload
+          : null
+
+      await replaceShipmentGuides(env, orderId, [])
       await upsertShipmentRow(env, orderId, {
+        approval_status: 'pending',
+        shipment_status: 'pending',
         parcel_json: safeStringify(parcelResult.parcel),
-        last_error: message
+        carrier:
+          hasCarrierAccountMismatch || hasPartialApprovalFailure ? null : currentShipment.carrier,
+        service:
+          hasCarrierAccountMismatch || hasPartialApprovalFailure ? null : currentShipment.service,
+        tracking_number: null,
+        tracking_url: null,
+        envia_shipment_id: null,
+        label_r2_key: null,
+        quote_amount_cents:
+          hasCarrierAccountMismatch || hasPartialApprovalFailure
+            ? null
+            : currentShipment.quote_amount_cents,
+        envia_request_json: safeStringify(requestPayloadForError),
+        envia_response_json: safeStringify(responsePayloadForError),
+        last_error: message,
+        last_error_code: errorCode
       })
       await insertShipmentEvent(env, orderId, 'approve_failed', 'admin', {
         mode,
         quote: selectedQuote,
         error: message,
-        payload: error instanceof EnviaRequestError ? error.payload : null
+        error_code: errorCode,
+        failed_request_index: createdGuides.length + 1,
+        created_guides: createdGuides,
+        requires_manual_review: hasPartialApprovalFailure,
+        payload: responsePayloadForError
       })
+      if (errorCode) {
+        throw new HttpError(message, 409, errorCode)
+      }
       throw error
     }
 
-    const normalizedStatus = normalizeWorkerShippingStatus(created.status || 'preparing')
-    const labelKey = await storeShipmentLabel(env, orderId, created)
+    const summary = summarizeShipmentHeaderFromGuides(createdGuides)
+    await replaceShipmentGuides(env, orderId, createdGuides)
 
     await upsertShipmentRow(env, orderId, {
       approval_status: 'approved',
-      shipment_status: normalizedStatus,
+      shipment_status: summary.shipment_status,
       parcel_json: safeStringify(parcelResult.parcel),
-      carrier: created.carrier || selectedQuote.carrier,
-      service: created.service || selectedQuote.service,
-      tracking_number: created.tracking_number,
-      tracking_url: created.tracking_url,
-      envia_shipment_id: created.shipment_id,
-      label_r2_key: labelKey,
+      carrier: summary.carrier || selectedQuote.carrier,
+      service: summary.service || selectedQuote.service,
+      tracking_number: summary.tracking_number,
+      tracking_url: summary.tracking_url,
+      envia_shipment_id: summary.envia_shipment_id,
+      label_r2_key: summary.label_r2_key,
       quote_amount_cents: selectedQuote.amount_cents,
       currency: selectedQuote.currency,
-      envia_request_json: safeStringify(labelPayload),
-      envia_response_json: safeStringify(created.raw),
+      envia_request_json: safeStringify(
+        labelRequests.length === 1
+          ? labelRequests[0]
+          : { requests: labelRequests, box_plan: labelBuild.boxPlan }
+      ),
+      envia_response_json: safeStringify({
+        guides: createdGuides.map((guide) => guide.envia_response)
+      }),
       approved_at: new Date().toISOString(),
       last_sync_at: new Date().toISOString(),
       rejected_at: null,
       rejected_reason: null,
-      last_error: null
+      last_error: null,
+      last_error_code: null,
+      tracking_sync_paused_at: null,
+      tracking_sync_pause_reason: null
     })
-    await updateOrderShippingStatus(env, orderId, normalizedStatus)
+    await updateOrderShippingStatus(env, orderId, summary.shipment_status)
     await insertShipmentEvent(env, orderId, 'approved', 'admin', {
       mode,
       quote: selectedQuote,
-      shipment: created
+      guide_count: createdGuides.length,
+      shipments: createdGuides
     })
 
     const refreshed = await fetchOrderDetail(env, orderId)
@@ -5727,7 +6741,8 @@ async function handleApprovePreviewShipmentByOrderId(
       env,
       payload,
       currentShipment,
-      Number(order.total_amount_cents || 0)
+      Number(order.total_amount_cents || 0),
+      Number(toObjectRecord(order.summary)?.units_total || 1)
     )
     if (!parcelResult.ok) {
       throw new Error(parcelResult.error)
@@ -5759,16 +6774,24 @@ async function handleApprovePreviewShipmentByOrderId(
       mode
     )
 
-    const labelBuild = await buildLabelRequestPayload(env, order, parcelResult.parcel, selectedQuote)
-    const labelPayload = labelBuild.payload
-    const resolvedSettings = toObjectRecord(labelPayload.settings)
+    const labelBuild = await buildLabelRequestPayloads(
+      env,
+      order,
+      parcelResult.parcel,
+      selectedQuote
+    )
+    const firstPayload = labelBuild.requests[0] || null
+    const resolvedSettings = toObjectRecord(firstPayload?.settings)
 
     return json(request, env, {
       success: true,
       order_id: orderId,
       mode,
       selected_quote: selectedQuote,
-      payload: labelPayload,
+      payload: firstPayload,
+      label_requests: labelBuild.requests,
+      guide_count: labelBuild.requests.length,
+      box_plan: labelBuild.boxPlan,
       resolved_settings: resolvedSettings,
       settings_source: labelBuild.settingsSource,
       shipment_type_applied: labelBuild.shipmentTypeApplied,
@@ -5811,7 +6834,12 @@ async function handleRejectShipmentByOrderId(
     const payload = (await request.json().catch(() => ({}))) as ShipmentRejectPayload
     const reason = cleanText(payload.reason)
     if (!reason) {
-      return json(request, env, { success: false, error: 'Debes indicar el motivo del rechazo.' }, 400)
+      return json(
+        request,
+        env,
+        { success: false, error: 'Debes indicar el motivo del rechazo.' },
+        400
+      )
     }
 
     const current = await fetchShipmentRow(env, orderId)
@@ -6001,14 +7029,13 @@ async function listNonTerminalApprovedShipmentOrderIds(env: Env): Promise<string
       FROM order_shipments
       WHERE approval_status = 'approved'
         AND shipment_status NOT IN ('delivered', 'cancelled', 'lost')
+        AND (tracking_sync_paused_at IS NULL OR TRIM(tracking_sync_paused_at) = '')
       ORDER BY datetime(COALESCE(last_sync_at, approved_at, created_at)) ASC, order_id ASC
       LIMIT 25
     `
   ).all<{ order_id: string }>()
 
-  return (result.results || [])
-    .map((row) => String(row.order_id || '').trim())
-    .filter(Boolean)
+  return (result.results || []).map((row) => String(row.order_id || '').trim()).filter(Boolean)
 }
 
 async function runScheduledShipmentSync(env: Env): Promise<void> {
@@ -6385,11 +7412,7 @@ export default {
       return response
     }
 
-    if (
-      shipmentActionRoute &&
-      shipmentActionRoute.action === 'sync' &&
-      request.method === 'POST'
-    ) {
+    if (shipmentActionRoute && shipmentActionRoute.action === 'sync' && request.method === 'POST') {
       const response = await handleSyncShipmentByOrderId(
         request,
         env,

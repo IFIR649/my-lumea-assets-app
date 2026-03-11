@@ -106,13 +106,18 @@ export class EnviaRequestError extends Error {
   status: number
   payload: unknown
   url: string
+  providerCode: string | null
 
-  constructor(message: string, options: { status: number; payload: unknown; url: string }) {
+  constructor(
+    message: string,
+    options: { status: number; payload: unknown; url: string; providerCode?: string | null }
+  ) {
     super(message)
     this.name = 'EnviaRequestError'
     this.status = options.status
     this.payload = options.payload
     this.url = options.url
+    this.providerCode = options.providerCode || null
   }
 }
 
@@ -256,6 +261,20 @@ function extractProviderErrorMessage(payload: unknown): string {
   )
 }
 
+function extractProviderErrorCode(payload: unknown): string | null {
+  const payloadRecord = toRecord(payload)
+  const errorRecord = pickRecord(payloadRecord?.error)
+  const detailRecord = pickRecord(payloadRecord?.details, payloadRecord?.detail)
+  const code = pickString(
+    payloadRecord?.code,
+    errorRecord?.code,
+    errorRecord?.error_code,
+    detailRecord?.code,
+    detailRecord?.error_code
+  )
+  return code || null
+}
+
 function hasProviderError(payload: unknown): boolean {
   const payloadRecord = toRecord(payload)
   if (!payloadRecord) return false
@@ -273,7 +292,8 @@ function buildRequestError(result: RequestResult, fallbackLabel: string): EnviaR
   return new EnviaRequestError(message, {
     status: result.status,
     payload: result.payload,
-    url: result.url
+    url: result.url,
+    providerCode: extractProviderErrorCode(result.payload)
   })
 }
 

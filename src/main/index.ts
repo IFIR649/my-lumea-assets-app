@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { existsSync } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -27,10 +27,11 @@ protocol.registerSchemesAsPrivileged([
 
 const IMAGE_FILE_PATTERN = /\.(jpg|jpeg|png|webp|gif)$/i
 
-type ConfigKey = 'defaultFolderPath'
+type ConfigKey = 'defaultFolderPath' | 'shipmentLabelsFolderPath'
 
 type StoreSchema = {
   defaultFolderPath: string
+  shipmentLabelsFolderPath: string
 }
 
 type LocalImage = {
@@ -49,9 +50,38 @@ type UploadFilePayload = {
 
 type UploadFileResult = { success: true; url: string } | { success: false; error: string }
 
+type ShipmentLabelFileRequest = {
+  orderId: string
+  guideIndex: number
+  trackingNumber: string | null
+  sourceUrl: string
+}
+
+type ShipmentLabelFile = {
+  orderId: string
+  guideIndex: number
+  trackingNumber: string | null
+  fileName: string
+  path: string
+  url: string
+  exists: boolean
+}
+
+type EnsureShipmentLabelFilesPayload = {
+  labels: ShipmentLabelFileRequest[]
+  force?: boolean
+}
+
+type EnsureShipmentLabelFilesResult =
+  | { success: true; files: ShipmentLabelFile[] }
+  | { success: false; error: string }
+
+type LocalFileActionResult = { success: true } | { success: false; error: string }
+
 const store = new Store<StoreSchema>({
   defaults: {
-    defaultFolderPath: ''
+    defaultFolderPath: '',
+    shipmentLabelsFolderPath: ''
   }
 })
 
@@ -92,6 +122,90 @@ function sanitizeFileName(fileName: string): string {
     .toLowerCase()
 
   return cleaned || `asset-${Date.now()}`
+}
+
+function buildLocalFileUrl(filePath: string): string {
+  return `local://${encodeURIComponent(filePath)}`
+}
+
+function getDefaultShipmentLabelsFolderPath(): string {
+  return join(app.getPath('documents'), 'Lumea Imperium', 'Guias')
+}
+
+function resolveShipmentLabelsFolderPath(): string {
+  return store.get('shipmentLabelsFolderPath') || getDefaultShipmentLabelsFolderPath()
+}
+
+async function ensureShipmentLabelsFolderPath(): Promise<string> {
+  const folderPath = resolveShipmentLabelsFolderPath()
+  await mkdir(folderPath, { recursive: true })
+  return folderPath
+}
+
+function buildShipmentLabelFilePath(request: ShipmentLabelFileRequest, folderPath: string): ShipmentLabelFile {
+  const orderFolder = join(folderPath, sanitizeFileName(request.orderId))
+  const trackingPart = sanitizeFileName(request.trackingNumber || `guia-${request.guideIndex}`)
+  const fileName = `${String(request.guideIndex).padStart(2, '0')}-${trackingPart}.pdf`
+  const fullPath = join(orderFolder, fileName)
+  return {
+    orderId: request.orderId,
+    guideIndex: request.guideIndex,
+    trackingNumber: request.trackingNumber,
+    fileName,
+    path: fullPath,
+    url: buildLocalFileUrl(fullPath),
+    exists: existsSync(fullPath)
+  }
+}
+
+async function downloadShipmentLabelFile(
+  request: ShipmentLabelFileRequest,
+  force = false
+): Promise<ShipmentLabelFile> {
+  const folderPath = await ensureShipmentLabelsFolderPath()
+  const labelFile = buildShipmentLabelFilePath(request, folderPath)
+  await mkdir(join(folderPath, sanitizeFileName(request.orderId)), { recursive: true })
+
+  if (!force && labelFile.exists) {
+    return labelFile
+  }
+
+  const response = await net.fetch(request.sourceUrl)
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar la guia (${response.status}).`)
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer())
+  await writeFile(labelFile.path, buffer)
+  return { ...labelFile, exists: true }
+}
+
+async function printLocalPdf(filePath: string): Promise<void> {
+  const viewer = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  try {
+    await viewer.loadURL(buildLocalFileUrl(filePath))
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => reject(new Error('Timeout imprimiendo PDF.')), 15000)
+      viewer.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
+        clearTimeout(timeoutId)
+        if (success) {
+          resolve()
+          return
+        }
+        reject(new Error(failureReason || 'No se pudo enviar el PDF a impresion.'))
+      })
+    })
+  } finally {
+    viewer.close()
+  }
 }
 
 function createWindow(): void {
@@ -157,6 +271,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('get-config', (_, key: ConfigKey): string => {
+    if (key === 'shipmentLabelsFolderPath') {
+      return resolveShipmentLabelsFolderPath()
+    }
     return store.get(key)
   })
 
@@ -177,6 +294,22 @@ app.whenReady().then(() => {
 
     const folderPath = result.filePaths[0]
     store.set('defaultFolderPath', folderPath)
+
+    return folderPath
+  })
+
+  ipcMain.handle('select-shipment-labels-folder', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Selecciona la carpeta local para guardar guias'
+    })
+
+    if (result.canceled) {
+      return null
+    }
+
+    const folderPath = result.filePaths[0]
+    store.set('shipmentLabelsFolderPath', folderPath)
 
     return folderPath
   })
@@ -247,6 +380,75 @@ app.whenReady().then(() => {
       }
     }
   )
+
+  ipcMain.handle(
+    'ensure-shipment-label-files',
+    async (_, payload: EnsureShipmentLabelFilesPayload): Promise<EnsureShipmentLabelFilesResult> => {
+      try {
+        const labels = Array.isArray(payload?.labels) ? payload.labels : []
+        const files = await Promise.all(
+          labels.map((label) => downloadShipmentLabelFile(label, Boolean(payload?.force)))
+        )
+        return { success: true, files }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'No se pudieron preparar las guias.'
+        }
+      }
+    }
+  )
+
+  ipcMain.handle('open-local-file', async (_, filePath: string): Promise<LocalFileActionResult> => {
+    try {
+      if (!filePath || !existsSync(filePath)) {
+        throw new Error('El archivo local no existe.')
+      }
+      const result = await shell.openPath(filePath)
+      if (result) {
+        throw new Error(result)
+      }
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'No se pudo abrir el archivo.'
+      }
+    }
+  })
+
+  ipcMain.handle(
+    'show-item-in-folder',
+    async (_, filePath: string): Promise<LocalFileActionResult> => {
+      try {
+        if (!filePath || !existsSync(filePath)) {
+          throw new Error('El archivo local no existe.')
+        }
+        shell.showItemInFolder(filePath)
+        return { success: true }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'No se pudo abrir la carpeta.'
+        }
+      }
+    }
+  )
+
+  ipcMain.handle('print-local-pdf', async (_, filePath: string): Promise<LocalFileActionResult> => {
+    try {
+      if (!filePath || !existsSync(filePath)) {
+        throw new Error('El archivo PDF local no existe.')
+      }
+      await printLocalPdf(filePath)
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'No se pudo imprimir el PDF.'
+      }
+    }
+  })
 
   createWindow()
 
