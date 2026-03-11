@@ -84,6 +84,10 @@ const SERVICE_QUERY_PATHS = [
       carrier ? `&carrier=${encodeURIComponent(carrier)}` : ''
     }`
 ]
+const DEFAULT_PRINT_SETTINGS_PATHS = [
+  (carrier: string) => `/default-user-print/${encodeURIComponent(carrier)}`,
+  (carrier: string) => `/default-user-print?carrier_id=${encodeURIComponent(carrier)}`
+]
 const QUOTE_PATHS = ['/ship/rate/', '/ship/rates/', '/ship/quote/']
 const LABEL_PATHS = ['/ship/generate/', '/ship/create/', '/ship/labels/']
 const TRACK_PATHS = ['/ship/generaltrack/', '/ship/track/']
@@ -235,15 +239,49 @@ function getQuoteEstimatedDays(item: JsonRecord): number | null {
   )
 }
 
+function extractProviderErrorMessage(payload: unknown): string {
+  const payloadRecord = toRecord(payload)
+  const errorRecord = pickRecord(payloadRecord?.error)
+  const detailRecord = pickRecord(payloadRecord?.details, payloadRecord?.detail)
+  return pickString(
+    payloadRecord?.message,
+    payloadRecord?.description,
+    errorRecord?.message,
+    errorRecord?.description,
+    errorRecord?.detail,
+    detailRecord?.message,
+    detailRecord?.description,
+    detailRecord?.detail,
+    payloadRecord?.error
+  )
+}
+
+function hasProviderError(payload: unknown): boolean {
+  const payloadRecord = toRecord(payload)
+  if (!payloadRecord) return false
+
+  const meta = pickString(payloadRecord.meta).toLowerCase()
+  if (meta === 'error') return true
+
+  if (typeof payloadRecord.error === 'string' && payloadRecord.error.trim()) return true
+  if (pickRecord(payloadRecord.error)) return true
+  return false
+}
+
 function buildRequestError(result: RequestResult, fallbackLabel: string): EnviaRequestError {
-  const payloadRecord = toRecord(result.payload)
-  const message =
-    pickString(payloadRecord?.message, payloadRecord?.error) || `${fallbackLabel} con HTTP ${result.status}.`
+  const message = extractProviderErrorMessage(result.payload) || `${fallbackLabel} con HTTP ${result.status}.`
   return new EnviaRequestError(message, {
     status: result.status,
     payload: result.payload,
     url: result.url
   })
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'AbortError' || /aborted|timeout/i.test(String(error.message || '')))
+  )
 }
 
 function collectObjectCandidates(payload: unknown): JsonRecord[] {
@@ -342,6 +380,11 @@ async function fetchJson(
       payload,
       url
     }
+  } catch (error) {
+    if (isAbortLikeError(error)) {
+      throw new Error(`Envia tardo demasiado en responder (${timeoutMs} ms).`)
+    }
+    throw error
   } finally {
     clearTimeout(timeoutId)
   }
@@ -482,11 +525,94 @@ function normalizeServiceNames(payload: unknown, carrier: string | null = null):
       const itemCarrier = getQuoteCarrier(item).toLowerCase()
       if (requestedCarrier && itemCarrier && itemCarrier !== requestedCarrier) return ''
 
-      return getQuoteService(item)
+      return pickString(item.name, getQuoteService(item))
     })
     .filter(Boolean)
 
   return [...new Set(names)]
+}
+
+function looksLikePrintSettings(record: JsonRecord | null): boolean {
+  if (!record) return false
+  const keys = Object.keys(record).map((key) => key.toLowerCase())
+  return keys.some((key) =>
+    ['print', 'paper', 'size', 'format', 'label', 'thermal', 'stock'].some((token) =>
+      key.includes(token)
+    )
+  )
+}
+
+function normalizePrintSettingsRecord(record: JsonRecord | null): JsonRecord | null {
+  if (!record) return null
+
+  const printRecord = pickRecord(record.print, record.print_settings, record.printSettings)
+  const normalized: JsonRecord = { ...record }
+  const printFormat = pickString(
+    record.printFormat,
+    record.print_format,
+    printRecord?.printFormat,
+    printRecord?.print_format,
+    record.format,
+    printRecord?.format
+  )
+
+  if (!printFormat) return null
+
+  normalized.printFormat = printFormat
+
+  const printSize = pickString(
+    record.printSize,
+    record.print_size,
+    printRecord?.printSize,
+    printRecord?.print_size,
+    record.size,
+    record.paperSize,
+    record.paper_size,
+    record.labelSize,
+    record.label_size,
+    printRecord?.size
+  )
+  if (printSize && !pickString(normalized.printSize, normalized.print_size, normalized.size)) {
+    normalized.printSize = printSize
+  }
+
+  const printType = pickString(
+    record.printType,
+    record.print_type,
+    printRecord?.printType,
+    printRecord?.print_type,
+    record.type,
+    record.labelType,
+    record.label_type,
+    printRecord?.type
+  )
+  if (printType && !pickString(normalized.printType, normalized.print_type, normalized.type)) {
+    normalized.printType = printType
+  }
+
+  return normalized
+}
+
+function extractPrintSettings(payload: unknown): JsonRecord | null {
+  const root = toRecord(payload)
+  const data = toRecord(root?.data)
+  const results = Array.isArray(root?.results) ? root?.results : []
+  const items = Array.isArray(root?.items) ? root?.items : []
+  const candidates = [
+    pickRecord(root?.settings),
+    pickRecord(data?.settings),
+    looksLikePrintSettings(data) ? data : null,
+    looksLikePrintSettings(toRecord(results[0])) ? toRecord(results[0]) : null,
+    looksLikePrintSettings(toRecord(items[0])) ? toRecord(items[0]) : null,
+    looksLikePrintSettings(root) ? root : null
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizePrintSettingsRecord(candidate)
+    if (normalized) return normalized
+  }
+
+  return null
 }
 
 function shipmentCandidatesFromPayload(payload: unknown): JsonRecord[] {
@@ -756,6 +882,9 @@ export async function quoteShipment(
   if (!result.ok) {
     throw buildRequestError(result, 'Envia quote fallo')
   }
+  if (hasProviderError(result.payload)) {
+    throw buildRequestError(result, 'Envia quote fallo')
+  }
 
   return {
     payload: result.payload,
@@ -822,6 +951,38 @@ export async function listAvailableServices(
   return []
 }
 
+export async function getDefaultUserPrintSettings(
+  env: EnviaEnvLike,
+  carrier: string
+): Promise<JsonRecord | null> {
+  const normalizedCarrier = String(carrier || '').trim()
+  if (!normalizedCarrier) return null
+
+  const config = assertConfig(env)
+  const headers = { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
+  let lastError: EnviaRequestError | null = null
+
+  for (const buildPath of DEFAULT_PRINT_SETTINGS_PATHS) {
+    const result = await fetchJson(
+      `${config.queriesBaseUrl}${buildPath(normalizedCarrier)}`,
+      { method: 'GET', headers },
+      config.timeoutMs
+    )
+
+    if (result.status === 404 || result.status === 400) continue
+    if (!result.ok) {
+      lastError = buildRequestError(result, 'Envia print settings fallo')
+      continue
+    }
+
+    const settings = extractPrintSettings(result.payload)
+    if (settings) return settings
+  }
+
+  if (lastError) throw lastError
+  return null
+}
+
 export async function createShippingLabel(
   env: EnviaEnvLike,
   payload: JsonRecord
@@ -836,6 +997,9 @@ export async function createShippingLabel(
   )
 
   if (!result.ok) {
+    throw buildRequestError(result, 'Envia label fallo')
+  }
+  if (hasProviderError(result.payload)) {
     throw buildRequestError(result, 'Envia label fallo')
   }
 
@@ -858,6 +1022,9 @@ export async function trackShipment(
   if (!result.ok) {
     throw buildRequestError(result, 'Envia tracking fallo')
   }
+  if (hasProviderError(result.payload)) {
+    throw buildRequestError(result, 'Envia tracking fallo')
+  }
 
   return normalizeTrackingResult(result.payload)
 }
@@ -872,6 +1039,11 @@ export async function downloadLabelBinary(env: EnviaEnvLike, url: string): Promi
       throw new Error(`No se pudo descargar la etiqueta (${response.status}).`)
     }
     return await response.arrayBuffer()
+  } catch (error) {
+    if (isAbortLikeError(error)) {
+      throw new Error(`Envia tardo demasiado en responder (${config.timeoutMs} ms).`)
+    }
+    throw error
   } finally {
     clearTimeout(timeoutId)
   }

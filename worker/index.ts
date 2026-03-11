@@ -2,6 +2,7 @@ import {
   createShippingLabel,
   downloadLabelBinary,
   EnviaRequestError,
+  getDefaultUserPrintSettings,
   listAvailableCarriers,
   listAvailableServices,
   pingEnviaApis,
@@ -375,6 +376,34 @@ type ShipmentQuotePayload = {
   service?: string | null
 }
 
+type ShipmentQuoteMode = 'auto' | 'manual'
+
+type ShipmentSelectedQuotePayload = {
+  carrier?: string | null
+  service?: string | null
+  amount_cents?: number | string | null
+  currency?: string | null
+  estimated_days?: number | string | null
+}
+
+type ShipmentApprovePayload = ShipmentQuotePayload & {
+  mode?: ShipmentQuoteMode | null
+  selected_quote?: ShipmentSelectedQuotePayload | null
+}
+
+type ShipmentQuoteSnapshot = {
+  kind: 'quote_snapshot'
+  mode: ShipmentQuoteMode
+  quoted_at: string
+  request: Record<string, unknown>
+  selected_quote: NormalizedQuote | null
+  quotes: NormalizedQuote[]
+  attempted_carriers: string[]
+  provider_payload: unknown
+}
+
+type LabelSettingsSource = 'provider' | 'fallback'
+
 type ShipmentRejectPayload = {
   reason?: string | null
 }
@@ -395,6 +424,12 @@ let ensureOrderShipmentsSchemaPromise: Promise<void> | null = null
 const tableColumnsCache = new Map<string, Set<string>>()
 const tableExistsCache = new Map<string, boolean>()
 const ENVIA_HEALTH_TTL_MS = 60_000
+const ENVIA_LABEL_SHIPMENT_TYPE = 1
+const ENVIA_LABEL_SETTINGS_FALLBACK = {
+  printFormat: 'PDF',
+  printSize: '4x6',
+  printType: 'thermal'
+} as const
 let enviaHealthCache: { status: EnviaHealthStatus; expiresAt: number } | null = null
 
 const PRODUCT_BASE_COLUMNS = [
@@ -598,6 +633,26 @@ function parseAssetsLimit(value: string | null): number {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error'
+}
+
+class HttpError extends Error {
+  status: number
+  code: string | null
+
+  constructor(message: string, status = 500, code: string | null = null) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+    this.code = code
+  }
+}
+
+function getHttpStatus(error: unknown, fallback = 500): number {
+  return error instanceof HttpError ? error.status : fallback
+}
+
+function getErrorCode(error: unknown): string | null {
+  return error instanceof HttpError ? error.code : null
 }
 
 function getChangesFromRun(result: unknown): number {
@@ -821,11 +876,21 @@ function getShipmentOrderIdFromPath(pathname: string): string | null {
 
 function getShipmentActionRoute(
   pathname: string
-): { orderId: string; action: 'quote' | 'approve' | 'reject' | 'sync' } | null {
-  const match = pathname.match(/^\/api\/shipments\/([^/]+)\/(quote|approve|reject|sync)$/)
+):
+  | { orderId: string; action: 'quote'; mode: ShipmentQuoteMode }
+  | { orderId: string; action: 'approve-preview' | 'approve' | 'reject' | 'sync' }
+  | null {
+  let match = pathname.match(/^\/api\/shipments\/([^/]+)\/quote\/(auto|manual)$/)
+  if (match) {
+    const orderId = decodeURIComponent(match[1] || '').trim()
+    const mode = match[2] as ShipmentQuoteMode
+    return orderId ? { orderId, action: 'quote', mode } : null
+  }
+
+  match = pathname.match(/^\/api\/shipments\/([^/]+)\/(approve-preview|approve|reject|sync)$/)
   if (!match) return null
   const orderId = decodeURIComponent(match[1] || '').trim()
-  const action = match[2] as 'quote' | 'approve' | 'reject' | 'sync'
+  const action = match[2] as 'approve-preview' | 'approve' | 'reject' | 'sync'
   return orderId ? { orderId, action } : null
 }
 
@@ -1327,6 +1392,28 @@ function safeStringify(value: unknown): string | null {
   if (value === null || value === undefined) return null
   try {
     return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sortJsonValue(item))
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort((left, right) => left.localeCompare(right))
+      .reduce<Record<string, unknown>>((accumulator, key) => {
+        accumulator[key] = sortJsonValue((value as Record<string, unknown>)[key])
+        return accumulator
+      }, {})
+  }
+  return value
+}
+
+function stableStringify(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  try {
+    return JSON.stringify(sortJsonValue(value))
   } catch {
     return null
   }
@@ -4114,7 +4201,7 @@ async function getOriginAddress(env: Env): Promise<Record<string, unknown> | nul
   const postal_code = cleanText(env.ENVIA_FROM_ZIP)
   const country = normalizeCountryCode(env.ENVIA_FROM_COUNTRY, 'MX')
 
-  let state =
+  const state =
     country === 'MX'
       ? normalizeMxStateCode(env.ENVIA_FROM_STATE) ||
         (await lookupMxStateCodeByZip(env, postal_code, country))
@@ -4156,6 +4243,22 @@ function buildAddressPayload(address: Record<string, unknown>): Record<string, u
   }) as Record<string, unknown>
 }
 
+function buildLabelAddressPayload(address: Record<string, unknown>): Record<string, unknown> {
+  return compactObject({
+    name: address.name,
+    company: address.company,
+    email: address.email,
+    phone: address.phone,
+    street: address.street,
+    number: address.number,
+    district: address.district,
+    city: address.city,
+    state: address.state,
+    country: address.country,
+    postal_code: address.postal_code
+  }) as Record<string, unknown>
+}
+
 function buildPackagePayload(parcel: Record<string, unknown>): Record<string, unknown> {
   const declaredValueCents = Number(parcel.declared_value_cents || 0)
   const length = Number(parcel.length_cm || 0)
@@ -4186,6 +4289,289 @@ function buildPackagePayload(parcel: Record<string, unknown>): Record<string, un
   }) as Record<string, unknown>
 }
 
+function buildLabelPackagePayload(parcel: Record<string, unknown>): Record<string, unknown> {
+  const declaredValueCents = Number(parcel.declared_value_cents || 0)
+  const length = Number(parcel.length_cm || 0)
+  const width = Number(parcel.width_cm || 0)
+  const height = Number(parcel.height_cm || 0)
+  return compactObject({
+    content: parcel.content,
+    amount: 1,
+    type: 'box',
+    weight: Number(parcel.weight_kg || 0),
+    length,
+    width,
+    height,
+    declaredValue: declaredValueCents / 100,
+    insurance: declaredValueCents / 100
+  }) as Record<string, unknown>
+}
+
+function normalizeRequestedShipmentFilters(
+  payload: ShipmentQuotePayload | null | undefined
+): { carrier: string | null; service: string | null } {
+  const carrier = cleanText(payload?.carrier)
+  const service = carrier ? cleanText(payload?.service) : null
+  return { carrier, service }
+}
+
+function normalizeShipmentQuoteMode(
+  value: unknown,
+  fallback: ShipmentQuoteMode = 'auto'
+): ShipmentQuoteMode {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'manual') return 'manual'
+  if (normalized === 'auto') return 'auto'
+  return fallback
+}
+
+function normalizeQuoteCandidate(value: unknown): NormalizedQuote | null {
+  const record = toObjectRecord(value)
+  if (!record) return null
+
+  const carrier = cleanText(record.carrier)
+  const service = cleanText(record.service)
+  const amountCents = parseNonNegativeCents(record.amount_cents)
+  if (!carrier || !service || amountCents === null) return null
+
+  return {
+    carrier,
+    service,
+    amount_cents: amountCents,
+    currency: String(cleanText(record.currency) || 'MXN').toUpperCase(),
+    estimated_days: parsePositiveFloat(record.estimated_days, null),
+    raw: toObjectRecord(record.raw) || record
+  }
+}
+
+function parseQuoteSnapshot(value: unknown): ShipmentQuoteSnapshot | null {
+  const record = toObjectRecord(value)
+  if (!record) return null
+
+  const quotes = Array.isArray(record.quotes)
+    ? record.quotes.map((quote) => normalizeQuoteCandidate(quote)).filter(Boolean)
+    : []
+  const normalizedQuotes = quotes as NormalizedQuote[]
+  const selected = normalizeQuoteCandidate(record.selected_quote)
+  const request = toObjectRecord(record.request)
+  if (!request || normalizedQuotes.length === 0) return null
+  const requestShipment = toObjectRecord(request.shipment)
+  const mode = normalizeShipmentQuoteMode(
+    record.mode,
+    cleanText(requestShipment?.carrier) || cleanText(requestShipment?.service) ? 'manual' : 'auto'
+  )
+
+  return {
+    kind: 'quote_snapshot',
+    mode,
+    quoted_at: String(cleanText(record.quoted_at) || ''),
+    request,
+    selected_quote: selected,
+    quotes: normalizedQuotes,
+    attempted_carriers: Array.isArray(record.attempted_carriers)
+      ? record.attempted_carriers.map((item) => String(item || '').trim()).filter(Boolean)
+      : [],
+    provider_payload: record.provider_payload ?? null
+  }
+}
+
+function findMatchingQuote(
+  quotes: NormalizedQuote[],
+  selected: ShipmentSelectedQuotePayload | null | undefined
+): NormalizedQuote | null {
+  const normalized = normalizeQuoteCandidate(selected)
+  if (!normalized) return null
+
+  return (
+    quotes.find(
+      (quote) =>
+        quote.carrier.toLowerCase() === normalized.carrier.toLowerCase() &&
+        quote.service.toLowerCase() === normalized.service.toLowerCase() &&
+        quote.amount_cents === normalized.amount_cents &&
+        quote.currency.toUpperCase() === normalized.currency.toUpperCase()
+    ) || null
+  )
+}
+
+async function clearShipmentQuoteState(
+  env: Env,
+  orderId: string,
+  parcel: Record<string, unknown>
+): Promise<void> {
+  await upsertShipmentRow(env, orderId, {
+    parcel_json: safeStringify(parcel),
+    carrier: null,
+    service: null,
+    quote_amount_cents: null,
+    envia_request_json: null,
+    envia_response_json: null,
+    last_error: null
+  })
+}
+
+function normalizeLabelSettings(
+  value: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  if (!value) return null
+
+  const printFormat = cleanText(value.printFormat || value.print_format || value.format)
+  if (!printFormat) return null
+
+  return compactObject({
+    printFormat,
+    printSize: cleanText(
+      value.printSize ||
+        value.print_size ||
+        value.size ||
+        value.paperSize ||
+        value.paper_size ||
+        value.labelSize ||
+        value.label_size
+    ),
+    printType: cleanText(
+      value.printType ||
+        value.print_type ||
+        value.type ||
+        value.labelType ||
+        value.label_type
+    )
+  }) as Record<string, unknown>
+}
+
+function hasCompleteLabelSettings(value: Record<string, unknown> | null): boolean {
+  if (!value) return false
+  return Boolean(
+    cleanText(value.printFormat) && cleanText(value.printSize) && cleanText(value.printType)
+  )
+}
+
+async function resolveLabelSettings(
+  env: Env,
+  carrier: string
+): Promise<{ settings: Record<string, unknown>; source: LabelSettingsSource }> {
+  const providerSettings = await getDefaultUserPrintSettings(env, carrier).catch(() => null)
+  const normalizedProviderSettings = normalizeLabelSettings(providerSettings)
+  if (hasCompleteLabelSettings(normalizedProviderSettings)) {
+    return {
+      settings: normalizedProviderSettings as Record<string, unknown>,
+      source: 'provider'
+    }
+  }
+
+  return {
+    settings: { ...ENVIA_LABEL_SETTINGS_FALLBACK },
+    source: 'fallback'
+  }
+}
+
+function getNestedRequiredField(value: unknown, path: string): unknown {
+  const segments = path.replace(/\[(\d+)\]/g, '.$1').split('.')
+  let current: unknown = value
+  for (const segment of segments) {
+    if (current === null || current === undefined) return undefined
+    if (Array.isArray(current)) {
+      const index = Number(segment)
+      current = Number.isInteger(index) ? current[index] : undefined
+      continue
+    }
+    if (typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
+
+function listMissingLabelPayloadFields(payload: Record<string, unknown>): string[] {
+  const requiredFields = [
+    'origin.name',
+    'origin.phone',
+    'origin.street',
+    'origin.city',
+    'origin.state',
+    'origin.country',
+    'origin.postal_code',
+    'destination.name',
+    'destination.phone',
+    'destination.street',
+    'destination.city',
+    'destination.state',
+    'destination.country',
+    'destination.postal_code',
+    'packages[0].content',
+    'packages[0].amount',
+    'packages[0].type',
+    'packages[0].weight',
+    'packages[0].length',
+    'packages[0].width',
+    'packages[0].height',
+    'packages[0].declaredValue',
+    'packages[0].insurance',
+    'shipment.carrier',
+    'shipment.service',
+    'shipment.type',
+    'settings.printFormat',
+    'settings.printSize',
+    'settings.printType'
+  ]
+
+  return requiredFields.filter((path) => {
+    const value = getNestedRequiredField(payload, path)
+    if (value === null || value === undefined) return true
+    if (typeof value === 'string') return !value.trim()
+    return false
+  })
+}
+
+function assertQuoteSnapshotMatches(
+  shipment: Record<string, unknown> | null,
+  currentRequestPayload: Record<string, unknown>,
+  selectedQuotePayload: ShipmentSelectedQuotePayload | null | undefined,
+  mode: ShipmentQuoteMode
+): { selectedQuote: NormalizedQuote } {
+  const quoteSnapshot = parseQuoteSnapshot(shipment?.envia_response)
+  if (!quoteSnapshot) {
+    throw new HttpError('Debes cotizar el envio antes de aprobar.', 409, 'requote_required')
+  }
+
+  if (quoteSnapshot.mode !== mode) {
+    throw new HttpError(
+      'La cotizacion guardada pertenece a otro metodo. Vuelve a cotizar antes de aprobar.',
+      409,
+      'requote_required'
+    )
+  }
+
+  const storedRequest = quoteSnapshot.request || toObjectRecord(shipment?.envia_request)
+  if (
+    !storedRequest ||
+    stableStringify(storedRequest) !== stableStringify(currentRequestPayload)
+  ) {
+    throw new HttpError(
+      'Cambiaste datos del paquete. Vuelve a cotizar antes de aprobar.',
+      409,
+      'requote_required'
+    )
+  }
+
+  if (!normalizeQuoteCandidate(selectedQuotePayload)) {
+    throw new HttpError(
+      'Debes seleccionar una cotizacion valida antes de aprobar.',
+      400,
+      'selected_quote_required'
+    )
+  }
+
+  const selectedQuote = findMatchingQuote(quoteSnapshot.quotes, selectedQuotePayload)
+  if (!selectedQuote) {
+    throw new HttpError(
+      'La cotizacion elegida ya no coincide con la ultima cotizacion guardada. Vuelve a cotizar.',
+      409,
+      'requote_required'
+    )
+  }
+
+  return { selectedQuote }
+}
+
 async function buildQuoteRequestPayload(
   env: Env,
   order: Record<string, unknown>,
@@ -4199,15 +4585,18 @@ async function buildQuoteRequestPayload(
     throw new Error('Configuracion de origen o direccion destino incompleta para cotizar.')
   }
 
+  const carrier = cleanText(requestedCarrier)
+  const service = carrier ? cleanText(requestedService) : null
+
   return compactObject({
     origin: buildAddressPayload(origin),
     destination: buildAddressPayload(destination),
     packages: [buildPackagePayload(parcel)],
     shipment:
-      requestedCarrier || requestedService
+      carrier || service
         ? {
-            carrier: requestedCarrier,
-            service: requestedService
+            carrier,
+            service
           }
         : undefined
   }) as Record<string, unknown>
@@ -4218,14 +4607,36 @@ async function buildLabelRequestPayload(
   order: Record<string, unknown>,
   parcel: Record<string, unknown>,
   quote: NormalizedQuote
-): Promise<Record<string, unknown>> {
-  const payload = await buildQuoteRequestPayload(env, order, parcel)
-  return {
-    ...payload,
+): Promise<{
+  payload: Record<string, unknown>
+  settingsSource: LabelSettingsSource
+  shipmentTypeApplied: number
+  missingFields: string[]
+}> {
+  const origin = await getOriginAddress(env)
+  const destination = getOrderShippingDestination(order)
+  if (!origin || !destination) {
+    throw new Error('Configuracion de origen o direccion destino incompleta para generar la guia.')
+  }
+
+  const settingsResolution = await resolveLabelSettings(env, quote.carrier)
+  const payload = compactObject({
+    origin: buildLabelAddressPayload(origin),
+    destination: buildLabelAddressPayload(destination),
+    packages: [buildLabelPackagePayload(parcel)],
     shipment: {
       carrier: quote.carrier,
-      service: quote.service
-    }
+      service: quote.service,
+      type: ENVIA_LABEL_SHIPMENT_TYPE
+    },
+    settings: settingsResolution.settings
+  }) as Record<string, unknown>
+
+  return {
+    payload,
+    settingsSource: settingsResolution.source,
+    shipmentTypeApplied: ENVIA_LABEL_SHIPMENT_TYPE,
+    missingFields: listMissingLabelPayloadFields(payload)
   }
 }
 
@@ -4554,31 +4965,34 @@ async function handlePatchOrderById(
 
 function selectQuote(
   quotes: NormalizedQuote[],
-  payload: ShipmentQuotePayload | null | undefined
+  payload: ShipmentQuotePayload | null | undefined,
+  mode: ShipmentQuoteMode
 ): NormalizedQuote | null {
   if (!quotes.length) return null
+  if (mode === 'auto') return quotes[0]
 
-  const requestedCarrier = cleanText(payload?.carrier)?.toLowerCase() || null
-  const requestedService = cleanText(payload?.service)?.toLowerCase() || null
-  if (!requestedCarrier && !requestedService) return quotes[0]
+  const filters = normalizeRequestedShipmentFilters(payload)
+  const requestedCarrier = filters.carrier?.toLowerCase() || null
+  const requestedService = filters.service?.toLowerCase() || null
+  if (!requestedCarrier) return null
 
-  const exact = quotes.find((quote) => {
-    const carrierMatches = requestedCarrier
-      ? quote.carrier.toLowerCase() === requestedCarrier
-      : true
-    const serviceMatches = requestedService
-      ? quote.service.toLowerCase() === requestedService
-      : true
-    return carrierMatches && serviceMatches
-  })
+  const carrierQuotes = quotes.filter(
+    (quote) => quote.carrier.toLowerCase() === requestedCarrier
+  )
+  if (!carrierQuotes.length) return null
 
-  return exact || quotes[0]
+  if (!requestedService) return carrierQuotes[0]
+
+  return (
+    carrierQuotes.find((quote) => quote.service.toLowerCase() === requestedService) || null
+  )
 }
 
 async function quoteOrderShipment(
   env: Env,
   orderId: string,
-  payload: ShipmentQuotePayload | null | undefined
+  payload: ShipmentQuotePayload | null | undefined,
+  mode: ShipmentQuoteMode
 ): Promise<Record<string, unknown>> {
   const order = await fetchOrderDetail(env, orderId)
   if (!order) {
@@ -4600,8 +5014,25 @@ async function quoteOrderShipment(
     throw new Error(parcelResult.error)
   }
 
-  const requestedCarrier = cleanText(payload?.carrier)
-  const requestedService = cleanText(payload?.service)
+  const filters = normalizeRequestedShipmentFilters(payload)
+  const requestedCarrier = mode === 'manual' ? filters.carrier : null
+  const requestedService = mode === 'manual' ? filters.service : null
+  if (mode === 'auto' && (filters.carrier || filters.service)) {
+    throw new HttpError(
+      'El modo automatico no acepta carrier o servicio manual.',
+      400,
+      'quote_mode_invalid'
+    )
+  }
+  if (mode === 'manual' && !requestedCarrier) {
+    throw new HttpError(
+      'Selecciona un carrier antes de cotizar en modo manual.',
+      400,
+      'carrier_required'
+    )
+  }
+  await clearShipmentQuoteState(env, orderId, parcelResult.parcel)
+
   const requestPayload = await buildQuoteRequestPayload(
     env,
     order,
@@ -4610,18 +5041,21 @@ async function quoteOrderShipment(
     requestedService
   )
 
-  let quoteResult
+  let quoteResult: { payload: unknown; quotes: NormalizedQuote[] } = {
+    payload: null,
+    quotes: []
+  }
   let aggregatedQuotes: NormalizedQuote[] = []
-  let attemptedCarriers: string[] = []
-  try {
-    quoteResult = await quoteShipment(env, requestPayload)
-    aggregatedQuotes = [...quoteResult.quotes]
-  } catch (error) {
-    quoteResult = {
-      payload: error instanceof EnviaRequestError ? error.payload : null,
-      quotes: []
-    }
-    if (requestedCarrier) {
+  let attemptedCarriers: string[] = requestedCarrier ? [requestedCarrier] : []
+  if (mode === 'manual') {
+    try {
+      quoteResult = await quoteShipment(env, requestPayload)
+      aggregatedQuotes = [...quoteResult.quotes]
+    } catch (error) {
+      quoteResult = {
+        payload: error instanceof EnviaRequestError ? error.payload : null,
+        quotes: []
+      }
       const message = getErrorMessage(error)
       await upsertShipmentRow(env, orderId, {
         parcel_json: safeStringify(parcelResult.parcel),
@@ -4632,14 +5066,13 @@ async function quoteOrderShipment(
       await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
         requested_carrier: requestedCarrier,
         requested_service: requestedService,
+        mode,
         error: message,
         payload: error instanceof EnviaRequestError ? error.payload : null
       })
       throw error
     }
-  }
-
-  if (!requestedCarrier && aggregatedQuotes.length === 0) {
+  } else {
     const destination = getOrderShippingDestination(order)
     const destinationCountry = cleanText(destination?.country) || 'MX'
     const discoveredCarriers = await listAvailableCarriers(env, destinationCountry).catch(
@@ -4647,39 +5080,71 @@ async function quoteOrderShipment(
     )
     attemptedCarriers = discoveredCarriers
 
-    const quoteMap = new Map<string, NormalizedQuote>()
-    for (const quote of aggregatedQuotes) {
-      quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
-    }
+    if (discoveredCarriers.length === 0) {
+      try {
+        quoteResult = await quoteShipment(env, requestPayload)
+        aggregatedQuotes = [...quoteResult.quotes]
+      } catch (error) {
+        quoteResult = {
+          payload: error instanceof EnviaRequestError ? error.payload : null,
+          quotes: []
+        }
+      }
+    } else {
+      const quoteMap = new Map<string, NormalizedQuote>()
+      let providerPayload: unknown = null
+      let carrierIndex = 0
+      const concurrency = Math.min(4, discoveredCarriers.length)
 
-    for (const carrierName of discoveredCarriers) {
-      const carrierPayload = await buildQuoteRequestPayload(
-        env,
-        order,
-        parcelResult.parcel,
-        carrierName,
-        requestedService
+      await Promise.all(
+        Array.from({ length: concurrency }, async () => {
+          while (carrierIndex < discoveredCarriers.length) {
+            const nextIndex = carrierIndex++
+            const carrierName = discoveredCarriers[nextIndex]
+            if (!carrierName) return
+
+            const carrierPayload = {
+              ...requestPayload,
+              shipment: {
+                carrier: carrierName
+              }
+            } as Record<string, unknown>
+
+            try {
+              const perCarrierResult = await quoteShipment(env, carrierPayload)
+              if (providerPayload == null && perCarrierResult.payload != null) {
+                providerPayload = perCarrierResult.payload
+              }
+              for (const quote of perCarrierResult.quotes) {
+                quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
+              }
+            } catch (error) {
+              if (providerPayload == null && error instanceof EnviaRequestError) {
+                providerPayload = error.payload
+              }
+            }
+          }
+        })
       )
 
-      try {
-        const perCarrierResult = await quoteShipment(env, carrierPayload)
-        for (const quote of perCarrierResult.quotes) {
-          quoteMap.set(`${quote.carrier}::${quote.service}`, quote)
-        }
-        if (!quoteResult?.payload && perCarrierResult.payload) {
-          quoteResult = perCarrierResult
-        }
-      } catch {
-        continue
+      aggregatedQuotes = [...quoteMap.values()].sort(
+        (left, right) => left.amount_cents - right.amount_cents
+      )
+      quoteResult = {
+        payload: providerPayload,
+        quotes: aggregatedQuotes
       }
     }
-
-    aggregatedQuotes = [...quoteMap.values()].sort((left, right) => left.amount_cents - right.amount_cents)
   }
 
-  const selected = selectQuote(aggregatedQuotes, payload)
+  const selected = selectQuote(aggregatedQuotes, payload, mode)
   if (!selected) {
-    const message = 'Envia no devolvio cotizaciones validas para este envio.'
+    const message =
+      mode === 'manual' && requestedService
+        ? `Envia no devolvio la cotizacion solicitada para ${requestedCarrier}/${requestedService}.`
+        : mode === 'manual'
+          ? `Envia no devolvio cotizaciones validas para el carrier ${requestedCarrier}.`
+          : 'Envia no devolvio cotizaciones validas para este envio.'
     await upsertShipmentRow(env, orderId, {
       parcel_json: safeStringify(parcelResult.parcel),
       envia_request_json: safeStringify(requestPayload),
@@ -4689,11 +5154,23 @@ async function quoteOrderShipment(
     await insertShipmentEvent(env, orderId, 'quote_failed', 'admin', {
       requested_carrier: requestedCarrier,
       requested_service: requestedService,
+      mode,
       error: message,
       payload: quoteResult.payload,
       attempted_carriers: attemptedCarriers
     })
     throw new Error(message)
+  }
+
+  const quoteSnapshot: ShipmentQuoteSnapshot = {
+    kind: 'quote_snapshot',
+    mode,
+    quoted_at: new Date().toISOString(),
+    request: requestPayload,
+    selected_quote: selected,
+    quotes: aggregatedQuotes,
+    attempted_carriers: attemptedCarriers,
+    provider_payload: quoteResult.payload
   }
 
   await upsertShipmentRow(env, orderId, {
@@ -4703,7 +5180,7 @@ async function quoteOrderShipment(
     carrier: selected.carrier,
     service: selected.service,
     envia_request_json: safeStringify(requestPayload),
-    envia_response_json: safeStringify(selected.raw),
+    envia_response_json: safeStringify(quoteSnapshot),
     last_error: null
   })
   await updateOrderShippingStatus(
@@ -4713,6 +5190,7 @@ async function quoteOrderShipment(
   )
 
   await insertShipmentEvent(env, orderId, 'quoted', 'admin', {
+    mode,
     selected_quote: selected,
     quotes_count: aggregatedQuotes.length
   })
@@ -4958,9 +5436,10 @@ async function handleQuoteShipmentByOrderId(
   request: Request,
   env: Env,
   requestId: string,
-  orderId: string
+  orderId: string,
+  mode: ShipmentQuoteMode
 ): Promise<Response> {
-  workerLog(requestId, 'shipments:quote:start', { orderId })
+  workerLog(requestId, 'shipments:quote:start', { orderId, mode })
   try {
     const authResult = assertAdminToken(request, env)
     if (!authResult.ok) {
@@ -4968,15 +5447,21 @@ async function handleQuoteShipmentByOrderId(
     }
 
     const payload = (await request.json().catch(() => ({}))) as ShipmentQuotePayload
-    const response = await quoteOrderShipment(env, orderId, payload)
+    const response = await quoteOrderShipment(env, orderId, payload, mode)
     return json(request, env, response)
   } catch (error) {
     workerError(requestId, 'shipments:quote:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
     return json(
       request,
       env,
-      { success: false, error: `Error cotizando envio: ${getErrorMessage(error)}` },
-      500
+      {
+        success: false,
+        error: `Error cotizando envio: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
     )
   }
 }
@@ -4994,16 +5479,18 @@ async function handleApproveShipmentByOrderId(
       return json(request, env, { success: false, error: authResult.error }, authResult.status)
     }
 
-    const payload = (await request.json().catch(() => ({}))) as ShipmentQuotePayload
-    const quoted = await quoteOrderShipment(env, orderId, payload)
-    const order = toObjectRecord(quoted.order)
-    if (!order) {
-      throw new Error('No se pudo preparar el pedido para aprobacion.')
+    const payload = (await request.json().catch(() => ({}))) as ShipmentApprovePayload
+    const mode = normalizeShipmentQuoteMode(payload.mode)
+    if (!payload.mode) {
+      throw new HttpError(
+        'Debes indicar el metodo de cotizacion antes de aprobar.',
+        400,
+        'mode_required'
+      )
     }
-
-    const selectedQuote = quoted.selected_quote as NormalizedQuote | null
-    if (!selectedQuote) {
-      throw new Error('No se encontro una cotizacion seleccionada.')
+    const order = await fetchOrderDetail(env, orderId)
+    if (!order) {
+      throw new Error('Pedido no encontrado.')
     }
 
     const currentShipment = toObjectRecord(order.shipment)
@@ -5015,19 +5502,76 @@ async function handleApproveShipmentByOrderId(
       return json(request, env, { success: true, order })
     }
 
-    const parcel = toObjectRecord(currentShipment?.parcel)
-    if (!parcel) {
-      throw new Error('No se pudo construir el paquete para este envio.')
+    if (String(order.status || '') === 'unpaid') {
+      throw new Error('El pedido aun no esta pagado.')
     }
 
-    const labelPayload = await buildLabelRequestPayload(env, order, parcel, selectedQuote)
-    const created = await createShippingLabel(env, labelPayload)
+    if (!currentShipment) {
+      throw new Error('El pedido no tiene registro de envio.')
+    }
+
+    const parcelResult = normalizeParcelInput(
+      env,
+      payload,
+      currentShipment,
+      Number(order.total_amount_cents || 0)
+    )
+    if (!parcelResult.ok) {
+      throw new Error(parcelResult.error)
+    }
+
+    const filters =
+      mode === 'manual'
+        ? normalizeRequestedShipmentFilters(payload)
+        : { carrier: null, service: null }
+    if (mode === 'manual' && !filters.carrier) {
+      throw new HttpError(
+        'Selecciona un carrier antes de aprobar en modo manual.',
+        400,
+        'carrier_required'
+      )
+    }
+    const currentRequestPayload = await buildQuoteRequestPayload(
+      env,
+      order,
+      parcelResult.parcel,
+      filters.carrier,
+      filters.service
+    )
+    const { selectedQuote } = assertQuoteSnapshotMatches(
+      currentShipment,
+      currentRequestPayload,
+      payload.selected_quote,
+      mode
+    )
+
+    const labelBuild = await buildLabelRequestPayload(env, order, parcelResult.parcel, selectedQuote)
+    const labelPayload = labelBuild.payload
+    let created: NormalizedShipmentResult
+    try {
+      created = await createShippingLabel(env, labelPayload)
+    } catch (error) {
+      const message = getErrorMessage(error)
+      await upsertShipmentRow(env, orderId, {
+        parcel_json: safeStringify(parcelResult.parcel),
+        last_error: message
+      })
+      await insertShipmentEvent(env, orderId, 'approve_failed', 'admin', {
+        mode,
+        quote: selectedQuote,
+        error: message,
+        payload: error instanceof EnviaRequestError ? error.payload : null
+      })
+      throw error
+    }
+
     const normalizedStatus = normalizeWorkerShippingStatus(created.status || 'preparing')
     const labelKey = await storeShipmentLabel(env, orderId, created)
 
     await upsertShipmentRow(env, orderId, {
       approval_status: 'approved',
       shipment_status: normalizedStatus,
+      parcel_json: safeStringify(parcelResult.parcel),
       carrier: created.carrier || selectedQuote.carrier,
       service: created.service || selectedQuote.service,
       tracking_number: created.tracking_number,
@@ -5046,6 +5590,7 @@ async function handleApproveShipmentByOrderId(
     })
     await updateOrderShippingStatus(env, orderId, normalizedStatus)
     await insertShipmentEvent(env, orderId, 'approved', 'admin', {
+      mode,
       quote: selectedQuote,
       shipment: created
     })
@@ -5054,11 +5599,126 @@ async function handleApproveShipmentByOrderId(
     return json(request, env, { success: true, order: refreshed })
   } catch (error) {
     workerError(requestId, 'shipments:approve:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
     return json(
       request,
       env,
-      { success: false, error: `Error aprobando envio: ${getErrorMessage(error)}` },
-      500
+      {
+        success: false,
+        error: `Error aprobando envio: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
+    )
+  }
+}
+
+async function handleApprovePreviewShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:approve-preview:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentApprovePayload
+    const mode = normalizeShipmentQuoteMode(payload.mode)
+    if (!payload.mode) {
+      throw new HttpError(
+        'Debes indicar el metodo de cotizacion antes de previsualizar la peticion.',
+        400,
+        'mode_required'
+      )
+    }
+
+    const order = await fetchOrderDetail(env, orderId)
+    if (!order) {
+      throw new Error('Pedido no encontrado.')
+    }
+
+    if (String(order.status || '') === 'unpaid') {
+      throw new Error('El pedido aun no esta pagado.')
+    }
+
+    const currentShipment = toObjectRecord(order.shipment)
+    if (!currentShipment) {
+      throw new Error('El pedido no tiene registro de envio.')
+    }
+
+    const parcelResult = normalizeParcelInput(
+      env,
+      payload,
+      currentShipment,
+      Number(order.total_amount_cents || 0)
+    )
+    if (!parcelResult.ok) {
+      throw new Error(parcelResult.error)
+    }
+
+    const filters =
+      mode === 'manual'
+        ? normalizeRequestedShipmentFilters(payload)
+        : { carrier: null, service: null }
+    if (mode === 'manual' && !filters.carrier) {
+      throw new HttpError(
+        'Selecciona un carrier antes de aprobar en modo manual.',
+        400,
+        'carrier_required'
+      )
+    }
+
+    const currentRequestPayload = await buildQuoteRequestPayload(
+      env,
+      order,
+      parcelResult.parcel,
+      filters.carrier,
+      filters.service
+    )
+    const { selectedQuote } = assertQuoteSnapshotMatches(
+      currentShipment,
+      currentRequestPayload,
+      payload.selected_quote,
+      mode
+    )
+
+    const labelBuild = await buildLabelRequestPayload(env, order, parcelResult.parcel, selectedQuote)
+    const labelPayload = labelBuild.payload
+    const resolvedSettings = toObjectRecord(labelPayload.settings)
+
+    return json(request, env, {
+      success: true,
+      order_id: orderId,
+      mode,
+      selected_quote: selectedQuote,
+      payload: labelPayload,
+      resolved_settings: resolvedSettings,
+      settings_source: labelBuild.settingsSource,
+      shipment_type_applied: labelBuild.shipmentTypeApplied,
+      missing_fields: labelBuild.missingFields,
+      warning:
+        labelBuild.settingsSource === 'fallback'
+          ? 'Se aplicaron print settings de fallback para esta guia.'
+          : null
+    })
+  } catch (error) {
+    workerError(requestId, 'shipments:approve-preview:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
+    return json(
+      request,
+      env,
+      {
+        success: false,
+        error: `Error generando preview de la peticion: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
     )
   }
 }
@@ -5586,6 +6246,25 @@ export default {
       request.method === 'POST'
     ) {
       const response = await handleQuoteShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId,
+        shipmentActionRoute.mode
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'approve-preview' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleApprovePreviewShipmentByOrderId(
         request,
         env,
         requestId,
