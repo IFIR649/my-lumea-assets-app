@@ -425,9 +425,35 @@ const tableColumnsCache = new Map<string, Set<string>>()
 const tableExistsCache = new Map<string, boolean>()
 const ENVIA_HEALTH_TTL_MS = 60_000
 const ENVIA_LABEL_SHIPMENT_TYPE = 1
+const ENVIA_PRINT_SIZE_ENUMS = new Set([
+  'PAPER_4.75X7',
+  'PAPER_4X6',
+  'PAPER_4X8',
+  'PAPER_7X4.75',
+  'PAPER_8.5X11',
+  'PAPER_8.5X11_BOTTOM_HALF_LABEL',
+  'PAPER_85X11_TOP_HALF_LABEL',
+  'PAPER_LETTER',
+  'STOCK_2.4X6',
+  'STOCK_2.9X5',
+  'STOCK_2.9X7',
+  'STOCK_3.8X4.2',
+  'STOCK_3.9X2.3',
+  'STOCK_3.9X3.9',
+  'STOCK_3.9X7',
+  'STOCK_4X4',
+  'STOCK_4X6',
+  'STOCK_4X6.5',
+  'STOCK_4X7.5',
+  'STOCK_4X8',
+  'STOCK_4X9',
+  'PAPER_8.27X11.67',
+  'STOCK_4X3',
+  'STOCK_3.9X4.3'
+])
 const ENVIA_LABEL_SETTINGS_FALLBACK = {
   printFormat: 'PDF',
-  printSize: '4x6',
+  printSize: 'STOCK_4X6',
   printType: 'thermal'
 } as const
 let enviaHealthCache: { status: EnviaHealthStatus; expiresAt: number } | null = null
@@ -1509,9 +1535,9 @@ function extractMxStateCodeFromValidation(validation: Record<string, unknown> | 
 }
 
 function resolveEnviaTimeoutMs(env: Env): number {
-  const parsed = Number(env.ENVIA_TIMEOUT_MS || 10000)
-  if (!Number.isFinite(parsed) || parsed <= 0) return 10000
-  return Math.max(2000, Math.min(parsed, 30000))
+  const parsed = Number(env.ENVIA_TIMEOUT_MS || 45000)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 45000
+  return Math.max(2000, Math.min(parsed, 60000))
 }
 
 function resolveEnviaGeocodesBaseUrl(env: Env): string {
@@ -4255,7 +4281,8 @@ function buildLabelAddressPayload(address: Record<string, unknown>): Record<stri
     city: address.city,
     state: address.state,
     country: address.country,
-    postal_code: address.postal_code
+    postal_code: address.postal_code,
+    postalCode: address.postal_code
   }) as Record<string, unknown>
 }
 
@@ -4299,9 +4326,16 @@ function buildLabelPackagePayload(parcel: Record<string, unknown>): Record<strin
     amount: 1,
     type: 'box',
     weight: Number(parcel.weight_kg || 0),
+    weightUnit: 'KG',
     length,
     width,
     height,
+    dimensions: {
+      length,
+      width,
+      height
+    },
+    lengthUnit: 'CM',
     declaredValue: declaredValueCents / 100,
     insurance: declaredValueCents / 100
   }) as Record<string, unknown>
@@ -4417,25 +4451,58 @@ function normalizeLabelSettings(
   const printFormat = cleanText(value.printFormat || value.print_format || value.format)
   if (!printFormat) return null
 
+  const printType = cleanText(
+    value.printType || value.print_type || value.type || value.labelType || value.label_type
+  )
+  const rawPrintSize = cleanText(
+    value.printSize ||
+      value.print_size ||
+      value.size ||
+      value.paperSize ||
+      value.paper_size ||
+      value.labelSize ||
+      value.label_size
+  )
+  const normalizedPrintSize = normalizeLabelPrintSize(rawPrintSize, printType)
+
   return compactObject({
     printFormat,
-    printSize: cleanText(
-      value.printSize ||
-        value.print_size ||
-        value.size ||
-        value.paperSize ||
-        value.paper_size ||
-        value.labelSize ||
-        value.label_size
-    ),
-    printType: cleanText(
-      value.printType ||
-        value.print_type ||
-        value.type ||
-        value.labelType ||
-        value.label_type
-    )
+    printSize: normalizedPrintSize,
+    printType
   }) as Record<string, unknown>
+}
+
+function normalizeLabelPrintSize(value: string | null, printType: string | null): string | null {
+  const raw = cleanText(value)
+  if (!raw) return null
+
+  const normalized = raw.toUpperCase().replace(/\s+/g, '')
+  if (ENVIA_PRINT_SIZE_ENUMS.has(normalized)) {
+    return normalized
+  }
+
+  const simplified = normalized.replace(/_/g, '')
+  const normalizedPrintType = String(cleanText(printType) || '').toLowerCase()
+  const useStock = normalizedPrintType === 'thermal'
+
+  if (simplified === '4X6' || simplified === 'PAPER4X6' || simplified === 'STOCK4X6') {
+    return useStock ? 'STOCK_4X6' : 'PAPER_4X6'
+  }
+
+  if (simplified === '4X8' || simplified === 'PAPER4X8' || simplified === 'STOCK4X8') {
+    return useStock ? 'STOCK_4X8' : 'PAPER_4X8'
+  }
+
+  if (
+    simplified === 'LETTER' ||
+    simplified === '85X11' ||
+    simplified === '8.5X11' ||
+    simplified === 'PAPERLETTER'
+  ) {
+    return 'PAPER_LETTER'
+  }
+
+  return raw
 }
 
 function hasCompleteLabelSettings(value: Record<string, unknown> | null): boolean {
@@ -4488,21 +4555,26 @@ function listMissingLabelPayloadFields(payload: Record<string, unknown>): string
     'origin.city',
     'origin.state',
     'origin.country',
-    'origin.postal_code',
+    'origin.postalCode',
     'destination.name',
     'destination.phone',
     'destination.street',
     'destination.city',
     'destination.state',
     'destination.country',
-    'destination.postal_code',
+    'destination.postalCode',
     'packages[0].content',
     'packages[0].amount',
     'packages[0].type',
     'packages[0].weight',
+    'packages[0].weightUnit',
     'packages[0].length',
     'packages[0].width',
     'packages[0].height',
+    'packages[0].dimensions.length',
+    'packages[0].dimensions.width',
+    'packages[0].dimensions.height',
+    'packages[0].lengthUnit',
     'packages[0].declaredValue',
     'packages[0].insurance',
     'shipment.carrier',
@@ -5703,7 +5775,7 @@ async function handleApprovePreviewShipmentByOrderId(
       missing_fields: labelBuild.missingFields,
       warning:
         labelBuild.settingsSource === 'fallback'
-          ? 'Se aplicaron print settings de fallback para esta guia.'
+          ? 'Envia no devolvio print settings desde Queries. El worker aplico un fallback local `PDF / STOCK_4X6 / thermal`; segun Quickstart de Envia, `settings` es opcional para `ship/generate`.'
           : null
     })
   } catch (error) {

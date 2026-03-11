@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
@@ -578,6 +578,10 @@ export default function ShipmentsManager(): React.JSX.Element {
   >(null)
   const [debugRequestShipmentType, setDebugRequestShipmentType] = useState<number | null>(null)
   const [debugRequestMissingFields, setDebugRequestMissingFields] = useState<string[]>([])
+  const selectedOrderIdRef = useRef<string | null>(null)
+  const manualCarrierRef = useRef('')
+  const detailRequestIdRef = useRef(0)
+  const optionsRequestIdRef = useRef(0)
 
   useEffect(() => {
     try {
@@ -639,6 +643,19 @@ export default function ShipmentsManager(): React.JSX.Element {
     setDebugRequestSettingsSource(null)
     setDebugRequestShipmentType(null)
     setDebugRequestMissingFields([])
+  }
+
+  const resetSelectedShipmentState = (): void => {
+    setSelectedOrder(null)
+    setAutoParcelForm(EMPTY_PARCEL_FORM)
+    setManualParcelForm(EMPTY_PARCEL_FORM)
+    setAutoQuoteState({ ...EMPTY_QUOTE_STATE })
+    setManualQuoteState({ ...EMPTY_QUOTE_STATE })
+    setAvailableCarriers([])
+    setAvailableServices([])
+    setRejectReason('')
+    setActiveQuoteMode('auto')
+    resetDebugRequest()
   }
 
   const applyOrderQuoteState = (
@@ -711,6 +728,9 @@ export default function ShipmentsManager(): React.JSX.Element {
     token = adminToken,
     carrier = manualParcelForm.carrier.trim()
   ): Promise<void> => {
+    const requestId = ++optionsRequestIdRef.current
+    const targetOrderId = selectedOrderIdRef.current
+    const requestedCarrier = carrier.trim()
     if (!normalizeAdminToken(token)) {
       setAvailableCarriers([])
       setAvailableServices([])
@@ -730,8 +750,16 @@ export default function ShipmentsManager(): React.JSX.Element {
       throw new Error(response.error || 'No se pudieron cargar opciones de Envia.')
     }
 
+    if (
+      optionsRequestIdRef.current !== requestId ||
+      selectedOrderIdRef.current !== targetOrderId ||
+      manualCarrierRef.current !== requestedCarrier
+    ) {
+      return
+    }
+
     setAvailableCarriers(response.carriers || [])
-    setAvailableServices(carrier ? response.services || [] : [])
+    setAvailableServices(requestedCarrier ? response.services || [] : [])
   }
 
   const loadPending = async (token = adminToken): Promise<void> => {
@@ -777,6 +805,7 @@ export default function ShipmentsManager(): React.JSX.Element {
   }
 
   const loadDetail = async (orderId: string, token = adminToken): Promise<void> => {
+    const requestId = ++detailRequestIdRef.current
     if (!normalizeAdminToken(token)) return
     setDetailLoading(true)
     try {
@@ -786,12 +815,21 @@ export default function ShipmentsManager(): React.JSX.Element {
       if (!response.success || !response.order) {
         throw new Error(response.error || 'No se pudo cargar el detalle del envio.')
       }
+      if (
+        detailRequestIdRef.current !== requestId ||
+        selectedOrderIdRef.current !== orderId ||
+        response.order.id !== orderId
+      ) {
+        return
+      }
       applyOrderQuoteState(response.order)
       setAvailableCarriers([])
       setAvailableServices([])
       setRejectReason(response.order.shipment?.rejected_reason || '')
     } finally {
-      setDetailLoading(false)
+      if (detailRequestIdRef.current === requestId) {
+        setDetailLoading(false)
+      }
     }
   }
 
@@ -815,21 +853,27 @@ export default function ShipmentsManager(): React.JSX.Element {
   }
 
   useEffect(() => {
+    selectedOrderIdRef.current = selectedOrderId
+  }, [selectedOrderId])
+
+  useEffect(() => {
+    manualCarrierRef.current = manualParcelForm.carrier.trim()
+  }, [manualParcelForm.carrier])
+
+  useEffect(() => {
     void refreshLists()
   }, [statusFilter, adminToken])
 
   useEffect(() => {
+    detailRequestIdRef.current += 1
+    optionsRequestIdRef.current += 1
     if (!selectedOrderId || !normalizeAdminToken(adminToken)) {
-      setSelectedOrder(null)
-      setAutoParcelForm(EMPTY_PARCEL_FORM)
-      setManualParcelForm(EMPTY_PARCEL_FORM)
-      clearQuoteSelection('auto')
-      clearQuoteSelection('manual')
-      setAvailableCarriers([])
-      setAvailableServices([])
+      resetSelectedShipmentState()
+      setDetailLoading(false)
       return
     }
 
+    resetSelectedShipmentState()
     void loadDetail(selectedOrderId)
   }, [selectedOrderId, adminToken])
 
@@ -1475,6 +1519,12 @@ export default function ShipmentsManager(): React.JSX.Element {
                     : 'El modo manual te deja elegir carrier y servicio desde listas reales de Envia. No se aceptan valores libres.'}
                 </p>
 
+                {selectedOrderId && (
+                  <div className="mt-3 inline-flex rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100">
+                    Datos de envio apuntando a: {selectedOrderId}
+                  </div>
+                )}
+
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <label className="space-y-2 text-xs text-zinc-400">
                     <span>Peso (kg)</span>
@@ -1828,9 +1878,10 @@ export default function ShipmentsManager(): React.JSX.Element {
                       </div>
                     )}
                     {debugRequestSettingsSource === 'fallback' && (
-                      <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                        Envia no devolvio print settings completos. El worker completo la guia con
-                        fallback `PDF / 4x6 / thermal`.
+                      <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                        Aviso: el worker uso fallback local `PDF / STOCK_4X6 / thermal`.
+                        Esto no implica un error por si mismo; el Quickstart de Envia
+                        documenta `settings` como opcional para `ship/generate`.
                       </div>
                     )}
                     {debugRequestMissingFields.length > 0 && (

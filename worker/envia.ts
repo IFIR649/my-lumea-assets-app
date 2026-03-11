@@ -55,7 +55,7 @@ export type NormalizedTrackingResult = {
   raw: unknown
 }
 
-const DEFAULT_TIMEOUT_MS = 10000
+const DEFAULT_TIMEOUT_MS = 45000
 const GEOCODE_PATHS = [
   (zip: string, country = 'MX') =>
     `/zipcode/${encodeURIComponent(country)}/${encodeURIComponent(zip)}`,
@@ -325,7 +325,7 @@ function resolveConfig(env: EnviaEnvLike): {
   const timeoutMsRaw = Number(env.ENVIA_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   const timeoutMs =
     Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
-      ? Math.min(Math.max(timeoutMsRaw, 2000), 30000)
+      ? Math.min(Math.max(timeoutMsRaw, 2000), 60000)
       : DEFAULT_TIMEOUT_MS
 
   return {
