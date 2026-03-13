@@ -512,6 +512,7 @@ let ensureTypesCatalogPromise: Promise<void> | null = null
 let ensureOrdersAdminSchemaPromise: Promise<void> | null = null
 let ensureProductImagesSchemaPromise: Promise<void> | null = null
 let ensureOrderShipmentsSchemaPromise: Promise<void> | null = null
+let ensureShipmentBoxTypesSchemaPromise: Promise<void> | null = null
 const tableColumnsCache = new Map<string, Set<string>>()
 const tableExistsCache = new Map<string, boolean>()
 const ENVIA_HEALTH_TTL_MS = 60_000
@@ -1431,6 +1432,44 @@ async function ensureOrdersAdminSchema(env: Env, requestId: string): Promise<voi
   await ensureOrdersAdminSchemaPromise
 }
 
+async function ensureShipmentBoxTypesSchema(env: Env): Promise<void> {
+  if (!ensureShipmentBoxTypesSchemaPromise) {
+    ensureShipmentBoxTypesSchemaPromise = (async () => {
+      await env.DB.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS shipment_box_types (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          code TEXT,
+          inner_length_cm REAL NOT NULL,
+          inner_width_cm REAL NOT NULL,
+          inner_height_cm REAL NOT NULL,
+          max_products INTEGER NOT NULL,
+          stock_qty INTEGER NOT NULL DEFAULT 0,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          sort INTEGER NOT NULL DEFAULT 100,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        `
+      ).run()
+      await env.DB.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_box_types_code
+         ON shipment_box_types(code)
+         WHERE code IS NOT NULL`
+      ).run()
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_shipment_box_types_active_sort
+         ON shipment_box_types(is_active, sort, id)`
+      ).run()
+    })().catch((err) => {
+      ensureShipmentBoxTypesSchemaPromise = null
+      throw err
+    })
+  }
+  await ensureShipmentBoxTypesSchemaPromise
+}
+
 async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<void> {
   if (!ensureOrderShipmentsSchemaPromise) {
     ensureOrderShipmentsSchemaPromise = (async () => {
@@ -1570,35 +1609,7 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
          ON order_shipment_guides(order_id, guide_index ASC)`
       ).run()
 
-      await env.DB.prepare(
-        `
-        CREATE TABLE IF NOT EXISTS shipment_box_types (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          code TEXT,
-          inner_length_cm REAL NOT NULL,
-          inner_width_cm REAL NOT NULL,
-          inner_height_cm REAL NOT NULL,
-          max_products INTEGER NOT NULL,
-          stock_qty INTEGER NOT NULL DEFAULT 0,
-          is_active INTEGER NOT NULL DEFAULT 1,
-          sort INTEGER NOT NULL DEFAULT 100,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        `
-      ).run()
-
-      await env.DB.prepare(
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_box_types_code
-         ON shipment_box_types(code)
-         WHERE code IS NOT NULL AND TRIM(code) <> ''`
-      ).run()
-
-      await env.DB.prepare(
-        `CREATE INDEX IF NOT EXISTS idx_shipment_box_types_active_sort
-         ON shipment_box_types(is_active, sort ASC, id ASC)`
-      ).run()
+      await ensureShipmentBoxTypesSchema(env)
 
       await env.DB.prepare(
         `
@@ -1985,7 +1996,7 @@ function normalizeShipmentBoxTypePayload(
   }
 
   if (payload?.code !== undefined) {
-    values.code = cleanText(payload.code)
+    values.code = cleanText(payload.code) || null
   }
 
   const numericFields: Array<{
@@ -4683,7 +4694,7 @@ async function fetchShipmentBoxTypeRow(
   env: Env,
   boxTypeId: number
 ): Promise<ShipmentBoxTypeRow | null> {
-  await ensureOrderShipmentsSchema(env, 'fetch-shipment-box-type')
+  await ensureShipmentBoxTypesSchema(env)
   const row = await env.DB.prepare(
     `
       SELECT
@@ -4711,7 +4722,7 @@ async function fetchShipmentBoxTypeRow(
 }
 
 async function listShipmentBoxTypeRows(env: Env): Promise<ShipmentBoxTypeRow[]> {
-  await ensureOrderShipmentsSchema(env, 'list-shipment-box-types')
+  await ensureShipmentBoxTypesSchema(env)
   const result = await env.DB.prepare(
     `
       SELECT

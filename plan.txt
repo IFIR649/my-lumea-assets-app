@@ -1,0 +1,68 @@
+# plan.txt - Estado Envia y Pendientes
+
+## Summary
+- Crear `plan.txt` en la raiz del proyecto, en espanol, con formato de texto simple y secciones breves.
+- El documento refleja el estado real del working tree actual y distingue claramente entre `implementado`, `parcial` y `pendiente`.
+- El arreglo de `shipment_box_types` existe localmente en `worker/index.ts`, pero sigue pendiente de commit/deploy y verificacion real en D1.
+
+## Content
+- `Resumen ejecutivo`
+  - Envia esta mayormente integrado como MVP.
+  - `npm run typecheck` pasa.
+  - `npx eslint worker/index.ts --quiet` falla por `mergeShipmentBoxTypeSnapshot` sin uso.
+- `Estado validado`
+  - `Impresion PDF de guias`: `Implementado`.
+    - La guia se guarda, se expone por `label_url`, Electron descarga el PDF local y lo imprime con `window.api.printLocalPdf`.
+    - Esto aplica al desktop Electron; en web queda la descarga/apertura del archivo.
+  - `Cotizacion y generacion de guias`: `Implementado`.
+    - Hay quote snapshot, validacion de recotizacion, construccion de payloads, soporte multi-guia y almacenamiento de etiquetas.
+  - `Cancelacion y refresh remoto`: `Implementado`.
+    - Hay consulta remota, cancelacion por guia, fallback local y refresco de estado.
+  - `Cajas en BD y gestion`: `Implementado` en codigo local.
+    - Existe CRUD de cajas, tab/catalogo en UI, seleccion de caja para el envio, snapshot en el parcel y descuento de stock al aprobar.
+  - `Validaciones`: `Parcial`.
+    - Backend valida dimensiones, peso, carrier manual, cambios que obligan recotizar, distribucion de cajas y payload de cajas.
+    - El formulario de cajas en frontend aun no hace validacion temprana fuerte; depende del backend.
+  - `Errores y observabilidad`: `Parcial`.
+    - Existen `EnviaRequestError`, `last_error`, `last_error_code` y mensajes especificos en UI.
+    - Los codigos estructurados solo cubren algunos casos; otros flujos siguen dependiendo solo del mensaje.
+  - `Validacion de direccion`: `Parcial/Pendiente`.
+    - `address_validation_json` existe en esquema y lectura/UI, pero no se esta escribiendo en quote/approve.
+- `Validacion del plan previo`
+  - `ensureShipmentBoxTypesSchema` extraido: `Si`.
+  - Indice unico sin `TRIM(code)`: `Si`.
+  - `ensureOrderShipmentsSchema` delega al schema de cajas: `Si`.
+  - `fetchShipmentBoxTypeRow` y `listShipmentBoxTypeRows` usan el ensure nuevo: `Si`.
+  - `normalizeShipmentBoxTypePayload` convierte codigo vacio a `null`: `Si`.
+  - `consumeShipmentBoxTypeStock` con ensure directo: `No`, pero queda cubierto via `fetchShipmentBoxTypeRow`; documentado como cubierto funcionalmente.
+  - `handleCreateShipmentBoxType` con ensure directo: `No`, pero queda cubierto via `ensureOrderShipmentsSchema`; documentado como cubierto funcionalmente.
+- `Pendientes por implementar`
+  - Persistir `address_validation_json` durante quote y/o approve para que la UI muestre validacion real de ZIP/deliverability.
+  - Mostrar `response.warning` despues de aprobar; hoy el backend calcula warnings de stock de cajas, pero la UI no los ensena en el exito de aprobacion.
+  - Eliminar `mergeShipmentBoxTypeSnapshot` si sigue sin uso para dejar `eslint` en verde.
+  - Agregar validacion cliente al editor de cajas: `name` requerido, dimensiones positivas, `max_products` positivo, `stock_qty` no negativo y `sort` entero.
+  - Extender `last_error_code` a mas fallos de quote/cancel/proveedor si se quiere troubleshooting por codigo y no solo por texto.
+  - Commit/deploy del fix de schema de cajas y verificacion en ambiente real con D1.
+- `No falta integrar`
+  - Impresion PDF de guia en Electron.
+  - Descarga/apertura de etiquetas.
+  - Flujo quote -> approve -> label -> cancel.
+  - CRUD base de cajas y descuento de stock.
+
+## APIs / Interfaces
+- No agregar endpoints nuevos en este alcance.
+- Documentar que ya existen `/api/shipment-box-types` y los endpoints de quote/approve/cancel.
+- Documentar que `warning`, `last_error`, `last_error_code` y `address_validation` ya forman parte del contrato actual.
+- Marcar como gap interno, no rediseno de API, la persistencia de `address_validation_json` y la ampliacion de `last_error_code`.
+
+## Test Plan
+- Crear caja con `code` vacio, con `code` duplicado, editarla y eliminarla.
+- Cotizar, aprobar, generar guia, descargar/imprimir PDF en Electron y cancelar guia.
+- Verificar descuento de stock y warning visible despues de aprobar cuando falten cajas.
+- Verificar que el detalle del envio muestre validacion real de direccion una vez que se persista `address_validation_json`.
+- Repetir `npm run typecheck` y `npx eslint worker/index.ts --quiet`; el cierre debe exigir ambos en verde.
+
+## Assumptions
+- `plan.txt` se escribio en espanol.
+- El documento describe el working tree actual, no solo `HEAD`.
+- El fix de cajas cuenta como `implementado localmente`, pero no como `cerrado` hasta quedar desplegado y validado.
