@@ -1,14 +1,17 @@
 import {
+  cancelShipment,
   createShippingLabel,
   downloadLabelBinary,
   EnviaRequestError,
   getDefaultUserPrintSettings,
+  getRemoteShipment,
   listAvailableCarriers,
   listAvailableServices,
   pingEnviaApis,
   quoteShipment,
   trackShipment,
   type EnviaHealthStatus,
+  type NormalizedRemoteShipment,
   type NormalizedQuote,
   type NormalizedShipmentResult,
   normalizeTrackingResult
@@ -222,11 +225,34 @@ type ProductTypeRow = {
   sort: number
 }
 
-type ShippingStatus = 'pending' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled' | 'lost'
+type ShipmentBoxTypeRow = {
+  id: number
+  name: string
+  code: string | null
+  inner_length_cm: number
+  inner_width_cm: number
+  inner_height_cm: number
+  max_products: number
+  stock_qty: number
+  is_active: number
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
+type ShippingStatus =
+  | 'pending'
+  | 'preparing'
+  | 'in_transit'
+  | 'delivered'
+  | 'partially_cancelled'
+  | 'cancelled'
+  | 'lost'
 type ShipmentApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 type DisplayStatus =
   | 'cancelado'
+  | 'cancelado_parcial'
   | 'perdido'
   | 'pendiente_pago'
   | 'preparando_envio'
@@ -389,6 +415,12 @@ type ShipmentListFilters = {
 }
 
 type ShipmentBoxPlanBoxPayload = {
+  box_type_id?: number | string | null
+  box_type_name?: string | null
+  box_type_code?: string | null
+  inner_length_cm?: number | string | null
+  inner_width_cm?: number | string | null
+  inner_height_cm?: number | string | null
   units_in_box?: number | string | null
   weight_kg?: number | string | null
   length_cm?: number | string | null
@@ -400,8 +432,26 @@ type ShipmentBoxPlanBoxPayload = {
 }
 
 type ShipmentBoxPlanPayload = {
+  box_type_id?: number | string | null
+  box_type_name?: string | null
+  box_type_code?: string | null
+  inner_length_cm?: number | string | null
+  inner_width_cm?: number | string | null
+  inner_height_cm?: number | string | null
   products_per_box?: number | string | null
   boxes?: ShipmentBoxPlanBoxPayload[] | null
+}
+
+type ShipmentBoxTypePayload = {
+  name?: string | null
+  code?: string | null
+  inner_length_cm?: number | string | null
+  inner_width_cm?: number | string | null
+  inner_height_cm?: number | string | null
+  max_products?: number | string | null
+  stock_qty?: number | string | null
+  is_active?: boolean | number | string | null
+  sort?: number | string | null
 }
 
 type ShipmentQuotePayload = {
@@ -609,12 +659,14 @@ const SHIPPING_STATUS_VALUES = [
   'preparing',
   'in_transit',
   'delivered',
+  'partially_cancelled',
   'cancelled',
   'lost'
 ] as const satisfies readonly ShippingStatus[]
 
 const DISPLAY_STATUS_VALUES = [
   'cancelado',
+  'cancelado_parcial',
   'perdido',
   'pendiente_pago',
   'preparando_envio',
@@ -974,7 +1026,10 @@ function getShipmentActionRoute(
   pathname: string
 ):
   | { orderId: string; action: 'quote'; mode: ShipmentQuoteMode }
-  | { orderId: string; action: 'approve-preview' | 'approve' | 'reject' | 'sync' }
+  | {
+      orderId: string
+      action: 'approve-preview' | 'approve' | 'reject' | 'sync' | 'remote-refresh' | 'cancel-all'
+    }
   | null {
   let match = pathname.match(/^\/api\/shipments\/([^/]+)\/quote\/(auto|manual)$/)
   if (match) {
@@ -983,11 +1038,37 @@ function getShipmentActionRoute(
     return orderId ? { orderId, action: 'quote', mode } : null
   }
 
-  match = pathname.match(/^\/api\/shipments\/([^/]+)\/(approve-preview|approve|reject|sync)$/)
+  match = pathname.match(
+    /^\/api\/shipments\/([^/]+)\/(approve-preview|approve|reject|sync|remote-refresh|cancel-all)$/
+  )
   if (!match) return null
   const orderId = decodeURIComponent(match[1] || '').trim()
-  const action = match[2] as 'approve-preview' | 'approve' | 'reject' | 'sync'
+  const action = match[2] as
+    | 'approve-preview'
+    | 'approve'
+    | 'reject'
+    | 'sync'
+    | 'remote-refresh'
+    | 'cancel-all'
   return orderId ? { orderId, action } : null
+}
+
+function getShipmentGuideActionRoute(
+  pathname: string
+): { orderId: string; guideIndex: number; action: 'cancel' } | null {
+  const match = pathname.match(/^\/api\/shipments\/([^/]+)\/guides\/(\d+)\/(cancel)$/)
+  if (!match) return null
+  const orderId = decodeURIComponent(match[1] || '').trim()
+  const guideIndex = Number.parseInt(match[2] || '', 10)
+  if (!orderId || !Number.isInteger(guideIndex) || guideIndex <= 0) return null
+  return { orderId, guideIndex, action: 'cancel' }
+}
+
+function getShipmentBoxTypeIdFromPath(pathname: string): number | null {
+  const match = pathname.match(/^\/api\/shipment-box-types\/(\d+)$/)
+  if (!match) return null
+  const value = Number.parseInt(match[1], 10)
+  return Number.isInteger(value) && value > 0 ? value : null
 }
 
 function normalizeType(value: unknown): string {
@@ -1085,6 +1166,7 @@ function toDisplayStatus(status: string, shippingStatus: string | null): Display
   const normalizedShipping = String(shippingStatus || '').toLowerCase()
 
   if (normalizedShipping === 'cancelled' || normalizedStatus === 'cancelled') return 'cancelado'
+  if (normalizedShipping === 'partially_cancelled') return 'cancelado_parcial'
   if (normalizedShipping === 'lost') return 'perdido'
   if (normalizedStatus === 'unpaid') return 'pendiente_pago'
   if (normalizedShipping === 'preparing') return 'preparando_envio'
@@ -1356,6 +1438,7 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
       clearTableMetadataCache('order_shipments')
       clearTableMetadataCache('order_shipment_events')
       clearTableMetadataCache('order_shipment_guides')
+      clearTableMetadataCache('shipment_box_types')
 
       await env.DB.prepare(
         `
@@ -1485,6 +1568,36 @@ async function ensureOrderShipmentsSchema(env: Env, requestId: string): Promise<
       await env.DB.prepare(
         `CREATE INDEX IF NOT EXISTS idx_order_shipment_guides_order
          ON order_shipment_guides(order_id, guide_index ASC)`
+      ).run()
+
+      await env.DB.prepare(
+        `
+        CREATE TABLE IF NOT EXISTS shipment_box_types (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          code TEXT,
+          inner_length_cm REAL NOT NULL,
+          inner_width_cm REAL NOT NULL,
+          inner_height_cm REAL NOT NULL,
+          max_products INTEGER NOT NULL,
+          stock_qty INTEGER NOT NULL DEFAULT 0,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          sort INTEGER NOT NULL DEFAULT 100,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        `
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_box_types_code
+         ON shipment_box_types(code)
+         WHERE code IS NOT NULL AND TRIM(code) <> ''`
+      ).run()
+
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_shipment_box_types_active_sort
+         ON shipment_box_types(is_active, sort ASC, id ASC)`
       ).run()
 
       await env.DB.prepare(
@@ -1796,6 +1909,140 @@ function parseNonNegativeCents(value: unknown, fallback: number | null = null): 
   return Math.round(parsed)
 }
 
+function parseShipmentBoxTypeId(value: unknown, fallback: number | null = null): number | null {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback
+  return parsed
+}
+
+function buildShipmentBoxTypeSnapshot(
+  row: ShipmentBoxTypeRow | Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  const record = toObjectRecord(row)
+  if (!record) return null
+  const id = parseShipmentBoxTypeId(record.id ?? record.box_type_id, null)
+  const name = cleanText(record.name ?? record.box_type_name)
+  const code = cleanText(record.code ?? record.box_type_code)
+  const innerLength = parsePositiveFloat(record.inner_length_cm, null)
+  const innerWidth = parsePositiveFloat(record.inner_width_cm, null)
+  const innerHeight = parsePositiveFloat(record.inner_height_cm, null)
+
+  if (!id && !name && !code && !innerLength && !innerWidth && !innerHeight) {
+    return null
+  }
+
+  return compactObject({
+    box_type_id: id,
+    box_type_name: name,
+    box_type_code: code,
+    inner_length_cm: innerLength,
+    inner_width_cm: innerWidth,
+    inner_height_cm: innerHeight
+  }) as Record<string, unknown>
+}
+
+function mergeShipmentBoxTypeSnapshot(
+  target: Record<string, unknown>,
+  snapshot: Record<string, unknown> | null
+): Record<string, unknown> {
+  if (!snapshot) return target
+  return {
+    ...target,
+    ...snapshot
+  }
+}
+
+function toShipmentBoxTypeResponse(row: ShipmentBoxTypeRow): Record<string, unknown> {
+  return {
+    id: Number(row.id || 0),
+    name: row.name,
+    code: row.code || null,
+    inner_length_cm: Number(row.inner_length_cm || 0),
+    inner_width_cm: Number(row.inner_width_cm || 0),
+    inner_height_cm: Number(row.inner_height_cm || 0),
+    max_products: Number(row.max_products || 0),
+    stock_qty: Number(row.stock_qty || 0),
+    is_active: Number(row.is_active || 0) > 0,
+    sort: Number(row.sort || 0),
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  }
+}
+
+function normalizeShipmentBoxTypePayload(
+  payload: ShipmentBoxTypePayload | null | undefined,
+  options: { partial?: boolean } = {}
+): { ok: true; values: Record<string, unknown> } | { ok: false; error: string } {
+  const partial = Boolean(options.partial)
+  const values: Record<string, unknown> = {}
+
+  if (payload?.name !== undefined) {
+    const name = cleanText(payload.name)
+    if (!name) return { ok: false, error: 'El nombre de la caja es obligatorio.' }
+    values.name = name
+  } else if (!partial) {
+    return { ok: false, error: 'El nombre de la caja es obligatorio.' }
+  }
+
+  if (payload?.code !== undefined) {
+    values.code = cleanText(payload.code)
+  }
+
+  const numericFields: Array<{
+    key: keyof ShipmentBoxTypePayload
+    target: string
+    label: string
+  }> = [
+    { key: 'inner_length_cm', target: 'inner_length_cm', label: 'Largo interno' },
+    { key: 'inner_width_cm', target: 'inner_width_cm', label: 'Ancho interno' },
+    { key: 'inner_height_cm', target: 'inner_height_cm', label: 'Alto interno' },
+    { key: 'max_products', target: 'max_products', label: 'Maximo de productos' }
+  ]
+
+  for (const field of numericFields) {
+    if (payload?.[field.key] !== undefined) {
+      const parsed = parsePositiveFloat(payload[field.key], null)
+      if (!parsed) {
+        return { ok: false, error: `${field.label} debe ser mayor a cero.` }
+      }
+      values[field.target] =
+        field.key === 'max_products' ? Math.round(parsed) : Math.round(parsed * 1000) / 1000
+    } else if (!partial) {
+      return { ok: false, error: `${field.label} es obligatorio.` }
+    }
+  }
+
+  if (payload?.stock_qty !== undefined) {
+    const stockQty = parseNonNegativeInteger(payload.stock_qty, null)
+    if (stockQty === null) {
+      return { ok: false, error: 'El stock de cajas debe ser cero o mayor.' }
+    }
+    values.stock_qty = stockQty
+  } else if (!partial) {
+    values.stock_qty = 0
+  }
+
+  if (payload?.is_active !== undefined) {
+    values.is_active = parseBooleanToInt(payload.is_active, 1)
+  } else if (!partial) {
+    values.is_active = 1
+  }
+
+  if (payload?.sort !== undefined) {
+    const sort = parseInteger(payload.sort)
+    if (sort === null) return { ok: false, error: 'El orden debe ser un entero.' }
+    values.sort = sort
+  } else if (!partial) {
+    values.sort = 100
+  }
+
+  if (Object.keys(values).length === 0) {
+    return { ok: false, error: 'No se enviaron campos para la caja.' }
+  }
+
+  return { ok: true, values }
+}
+
 function parseShipmentApprovalStatus(value: unknown): ShipmentApprovalStatus {
   const normalized = String(value || '')
     .trim()
@@ -1809,7 +2056,45 @@ function normalizeWorkerShippingStatus(value: unknown): ShippingStatus {
   return normalizeShippingStatus(value) || 'pending'
 }
 
+function extractRemoteShipmentMeta(value: unknown): {
+  cancelable: boolean | null
+  status_text: string | null
+  checked_at: string | null
+} {
+  const record = toObjectRecord(value)
+  const remoteDetail = toObjectRecord(record?.remote_detail)
+  const tracking = toObjectRecord(record?.tracking)
+  const cancelableValue =
+    record?.remote_cancelable ??
+    remoteDetail?.cancelable ??
+    tracking?.cancelable ??
+    record?.cancelable
+  const statusText =
+    cleanText(record?.remote_status_text) ||
+    cleanText(remoteDetail?.status_text) ||
+    cleanText(remoteDetail?.status) ||
+    cleanText(tracking?.status_text) ||
+    cleanText(tracking?.status)
+
+  return {
+    cancelable:
+      typeof cancelableValue === 'boolean'
+        ? cancelableValue
+        : typeof cancelableValue === 'number'
+          ? cancelableValue > 0
+          : typeof cancelableValue === 'string'
+            ? ['1', 'true', 'yes', 'si', 'active'].includes(cancelableValue.trim().toLowerCase())
+            : null,
+    status_text: statusText,
+    checked_at: cleanText(record?.remote_checked_at) || cleanText(record?.checked_at)
+  }
+}
+
 function toShipmentGuide(row: OrderShipmentGuideRow, env: Env): Record<string, unknown> {
+  const enviaResponse = safeParseJson(row.envia_response_json)
+  const remoteMeta = extractRemoteShipmentMeta(enviaResponse)
+  const parcel = safeParseJson(row.parcel_json)
+  const parcelRecord = toObjectRecord(parcel)
   return {
     guide_index: Number(row.guide_index || 0),
     carrier: row.carrier || null,
@@ -1819,10 +2104,14 @@ function toShipmentGuide(row: OrderShipmentGuideRow, env: Env): Record<string, u
     envia_shipment_id: row.envia_shipment_id || null,
     label_r2_key: row.label_r2_key || null,
     label_url: row.label_r2_key ? buildAssetUrl(env, row.label_r2_key) : null,
-    parcel: safeParseJson(row.parcel_json),
+    parcel,
     envia_request: safeParseJson(row.envia_request_json),
-    envia_response: safeParseJson(row.envia_response_json),
+    envia_response: enviaResponse,
     shipment_status: normalizeWorkerShippingStatus(row.shipment_status),
+    remote_cancelable: remoteMeta.cancelable,
+    remote_status_text: remoteMeta.status_text,
+    remote_checked_at: remoteMeta.checked_at,
+    box_type: buildShipmentBoxTypeSnapshot(toObjectRecord(parcelRecord?.box_type) || parcelRecord),
     last_error: row.last_error || null,
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -1842,6 +2131,10 @@ function buildLegacyShipmentGuide(
     return null
   }
 
+  const enviaResponse = safeParseJson(shipmentRow.envia_response_json)
+  const remoteMeta = extractRemoteShipmentMeta(enviaResponse)
+  const parcel = safeParseJson(shipmentRow.parcel_json)
+  const parcelRecord = toObjectRecord(parcel)
   return {
     guide_index: 1,
     carrier: shipmentRow.carrier || null,
@@ -1851,10 +2144,14 @@ function buildLegacyShipmentGuide(
     envia_shipment_id: shipmentRow.envia_shipment_id || null,
     label_r2_key: shipmentRow.label_r2_key || null,
     label_url: shipmentRow.label_r2_key ? buildAssetUrl(env, shipmentRow.label_r2_key) : null,
-    parcel: safeParseJson(shipmentRow.parcel_json),
+    parcel,
     envia_request: safeParseJson(shipmentRow.envia_request_json),
-    envia_response: safeParseJson(shipmentRow.envia_response_json),
+    envia_response: enviaResponse,
     shipment_status: normalizeWorkerShippingStatus(shipmentRow.shipment_status),
+    remote_cancelable: remoteMeta.cancelable,
+    remote_status_text: remoteMeta.status_text,
+    remote_checked_at: remoteMeta.checked_at,
+    box_type: buildShipmentBoxTypeSnapshot(toObjectRecord(parcelRecord?.box_type) || parcelRecord),
     last_error: shipmentRow.last_error || null,
     created_at: shipmentRow.created_at,
     updated_at: shipmentRow.updated_at
@@ -1869,6 +2166,10 @@ function toOrderShipment(
   if (!row?.order_id) return null
   const legacyGuide = buildLegacyShipmentGuide(row, env)
   const normalizedGuides = guides.length > 0 ? guides : legacyGuide ? [legacyGuide] : []
+  const enviaResponse = safeParseJson(row.envia_response_json)
+  const remoteMeta = extractRemoteShipmentMeta(enviaResponse)
+  const parcel = safeParseJson(row.parcel_json)
+  const parcelRecord = toObjectRecord(parcel)
   return {
     order_id: row.order_id,
     provider: row.provider || 'envia',
@@ -1884,10 +2185,10 @@ function toOrderShipment(
     label_url: row.label_r2_key ? buildAssetUrl(env, row.label_r2_key) : null,
     quote_amount_cents: row.quote_amount_cents == null ? null : Number(row.quote_amount_cents || 0),
     currency: row.currency || 'MXN',
-    parcel: safeParseJson(row.parcel_json),
+    parcel,
     address_validation: safeParseJson(row.address_validation_json),
     envia_request: safeParseJson(row.envia_request_json),
-    envia_response: safeParseJson(row.envia_response_json),
+    envia_response: enviaResponse,
     approved_at: row.approved_at || null,
     rejected_at: row.rejected_at || null,
     rejected_reason: row.rejected_reason || null,
@@ -1896,6 +2197,10 @@ function toOrderShipment(
     last_error_code: row.last_error_code || null,
     tracking_sync_paused_at: row.tracking_sync_paused_at || null,
     tracking_sync_pause_reason: row.tracking_sync_pause_reason || null,
+    remote_cancelable: remoteMeta.cancelable,
+    remote_status_text: remoteMeta.status_text,
+    remote_checked_at: remoteMeta.checked_at,
+    box_type: buildShipmentBoxTypeSnapshot(toObjectRecord(parcelRecord?.box_type) || parcelRecord),
     guides: normalizedGuides,
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -3927,6 +4232,7 @@ function readOrderFilters(url: URL): { page: number; limit: number; filters: Ord
 
 const DISPLAY_STATUS_SQL = `CASE
   WHEN lower(COALESCE(o.shipping_status, '')) = 'cancelled' OR o.status = 'cancelled' THEN 'cancelado'
+  WHEN lower(COALESCE(o.shipping_status, '')) = 'partially_cancelled' THEN 'cancelado_parcial'
   WHEN lower(COALESCE(o.shipping_status, '')) = 'lost' THEN 'perdido'
   WHEN o.status = 'unpaid' THEN 'pendiente_pago'
   WHEN lower(COALESCE(o.shipping_status, '')) = 'preparing' THEN 'preparando_envio'
@@ -4373,6 +4679,62 @@ async function fetchShipmentRow(env: Env, orderId: string): Promise<OrderShipmen
   return row || null
 }
 
+async function fetchShipmentBoxTypeRow(
+  env: Env,
+  boxTypeId: number
+): Promise<ShipmentBoxTypeRow | null> {
+  await ensureOrderShipmentsSchema(env, 'fetch-shipment-box-type')
+  const row = await env.DB.prepare(
+    `
+      SELECT
+        id,
+        name,
+        code,
+        inner_length_cm,
+        inner_width_cm,
+        inner_height_cm,
+        max_products,
+        stock_qty,
+        is_active,
+        sort,
+        created_at,
+        updated_at
+      FROM shipment_box_types
+      WHERE id = ?
+      LIMIT 1
+    `
+  )
+    .bind(boxTypeId)
+    .first<ShipmentBoxTypeRow>()
+
+  return row || null
+}
+
+async function listShipmentBoxTypeRows(env: Env): Promise<ShipmentBoxTypeRow[]> {
+  await ensureOrderShipmentsSchema(env, 'list-shipment-box-types')
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        id,
+        name,
+        code,
+        inner_length_cm,
+        inner_width_cm,
+        inner_height_cm,
+        max_products,
+        stock_qty,
+        is_active,
+        sort,
+        created_at,
+        updated_at
+      FROM shipment_box_types
+      ORDER BY is_active DESC, sort ASC, id ASC
+    `
+  ).all<ShipmentBoxTypeRow>()
+
+  return result.results || []
+}
+
 async function insertShipmentEvent(
   env: Env,
   orderId: string,
@@ -4444,7 +4806,8 @@ function buildAutoBoxPlan(
   baseline: Record<string, unknown>,
   totalAmountCents: number,
   totalUnits: number,
-  productsPerBox: number
+  productsPerBox: number,
+  boxTypeSnapshot: Record<string, unknown> | null = null
 ): Record<string, unknown> {
   const unitBuckets: number[] = []
   let remaining = totalUnits
@@ -4457,9 +4820,11 @@ function buildAutoBoxPlan(
   const declaredValues = distributeDeclaredValueAcrossBoxes(totalAmountCents, unitBuckets)
 
   return {
+    ...(boxTypeSnapshot || {}),
     products_per_box: productsPerBox,
     boxes: unitBuckets.map((unitsInBox, index) => ({
       guide_index: index + 1,
+      ...(boxTypeSnapshot || {}),
       units_in_box: unitsInBox,
       weight_kg: baseline.weight_kg,
       length_cm: baseline.length_cm,
@@ -4479,10 +4844,6 @@ function normalizeBoxPlanInput(
   totalAmountCents: number,
   totalUnits: number
 ): { ok: true; boxPlan: Record<string, unknown> | null } | { ok: false; error: string } {
-  if (totalUnits <= 1) {
-    return { ok: true, boxPlan: null }
-  }
-
   const hasBoxPlanField = Boolean(
     payload && Object.prototype.hasOwnProperty.call(payload, 'box_plan')
   )
@@ -4490,19 +4851,42 @@ function normalizeBoxPlanInput(
     ? toObjectRecord(payload?.box_plan)
     : toObjectRecord(existingParcel?.box_plan)
 
+  if (totalUnits <= 1 && !rawBoxPlan) {
+    return { ok: true, boxPlan: null }
+  }
+
   if (!rawBoxPlan) {
     return { ok: true, boxPlan: null }
   }
 
+  const boxTypeSnapshot =
+    buildShipmentBoxTypeSnapshot(rawBoxPlan) ||
+    buildShipmentBoxTypeSnapshot(
+      Array.isArray(rawBoxPlan.boxes) ? toObjectRecord(rawBoxPlan.boxes[0]) : null
+    )
   const parsedProductsPerBox = parsePositiveInteger(rawBoxPlan.products_per_box, null)
   const rawBoxes = Array.isArray(rawBoxPlan.boxes) ? rawBoxPlan.boxes : []
   if (rawBoxes.length === 0) {
     if (!parsedProductsPerBox || parsedProductsPerBox >= totalUnits) {
-      return { ok: true, boxPlan: null }
+      return {
+        ok: true,
+        boxPlan: boxTypeSnapshot
+          ? compactObject({
+              ...(boxTypeSnapshot || {}),
+              products_per_box: parsedProductsPerBox || totalUnits
+            }) as Record<string, unknown>
+          : null
+      }
     }
     return {
       ok: true,
-      boxPlan: buildAutoBoxPlan(baseline, totalAmountCents, totalUnits, parsedProductsPerBox)
+      boxPlan: buildAutoBoxPlan(
+        baseline,
+        totalAmountCents,
+        totalUnits,
+        parsedProductsPerBox,
+        boxTypeSnapshot
+      )
     }
   }
 
@@ -4533,6 +4917,7 @@ function normalizeBoxPlanInput(
 
       return {
         guide_index: index + 1,
+        ...(boxTypeSnapshot || {}),
         units_in_box: unitsInBox,
         weight_kg: weightKg,
         length_cm: lengthCm,
@@ -4546,7 +4931,15 @@ function normalizeBoxPlanInput(
     .filter(Boolean)
 
   if (normalizedBoxes.length <= 1) {
-    return { ok: true, boxPlan: null }
+    return {
+      ok: true,
+      boxPlan: boxTypeSnapshot
+        ? compactObject({
+            ...(boxTypeSnapshot || {}),
+            products_per_box: parsedProductsPerBox || totalUnits
+          }) as Record<string, unknown>
+        : null
+    }
   }
 
   const typedBoxes = normalizedBoxes as Array<Record<string, unknown>>
@@ -4565,6 +4958,7 @@ function normalizeBoxPlanInput(
   return {
     ok: true,
     boxPlan: {
+      ...(boxTypeSnapshot || {}),
       products_per_box: productsPerBox,
       boxes: typedBoxes
     }
@@ -4581,6 +4975,7 @@ function resolveShipmentBoxes(parcel: Record<string, unknown>): Record<string, u
       (box) =>
         compactObject({
           guide_index: box?.guide_index,
+          box_type: buildShipmentBoxTypeSnapshot(box),
           units_in_box: box?.units_in_box,
           weight_kg: box?.weight_kg,
           length_cm: box?.length_cm,
@@ -4596,8 +4991,11 @@ function resolveShipmentBoxes(parcel: Record<string, unknown>): Record<string, u
     return normalizedBoxes
   }
 
+  const boxTypeSnapshot =
+    buildShipmentBoxTypeSnapshot(boxPlan) || buildShipmentBoxTypeSnapshot(toObjectRecord(parcel.box_type))
   return [
     compactObject({
+      box_type: boxTypeSnapshot,
       weight_kg: parcel.weight_kg,
       length_cm: parcel.length_cm,
       width_cm: parcel.width_cm,
@@ -4607,6 +5005,62 @@ function resolveShipmentBoxes(parcel: Record<string, unknown>): Record<string, u
       notes: parcel.notes
     }) as Record<string, unknown>
   ]
+}
+
+function resolveShipmentBoxTypeUsage(
+  parcel: Record<string, unknown>,
+  guidesCount = 0
+): { boxTypeId: number | null; boxesUsed: number; snapshot: Record<string, unknown> | null } {
+  const boxPlan = toObjectRecord(parcel.box_plan)
+  const snapshot =
+    buildShipmentBoxTypeSnapshot(toObjectRecord(parcel.box_type)) ||
+    buildShipmentBoxTypeSnapshot(boxPlan) ||
+    buildShipmentBoxTypeSnapshot(Array.isArray(boxPlan?.boxes) ? toObjectRecord(boxPlan.boxes[0]) : null)
+  const boxTypeId = parseShipmentBoxTypeId(snapshot?.box_type_id, null)
+  if (!boxTypeId) {
+    return { boxTypeId: null, boxesUsed: 0, snapshot }
+  }
+
+  const plannedBoxes = Array.isArray(boxPlan?.boxes) ? boxPlan.boxes.length : 0
+  const boxesUsed = Math.max(plannedBoxes, guidesCount > 0 ? guidesCount : plannedBoxes || 1)
+  return { boxTypeId, boxesUsed, snapshot }
+}
+
+async function consumeShipmentBoxTypeStock(
+  env: Env,
+  parcel: Record<string, unknown>,
+  guidesCount: number
+): Promise<{ boxType: Record<string, unknown> | null; warning: string | null; boxesUsed: number }> {
+  const usage = resolveShipmentBoxTypeUsage(parcel, guidesCount)
+  if (!usage.boxTypeId || usage.boxesUsed <= 0) {
+    return { boxType: null, warning: null, boxesUsed: 0 }
+  }
+
+  const currentBoxType = await fetchShipmentBoxTypeRow(env, usage.boxTypeId)
+  if (!currentBoxType) {
+    return { boxType: usage.snapshot, warning: 'El tipo de caja seleccionado ya no existe.', boxesUsed: usage.boxesUsed }
+  }
+
+  const stockBefore = Number(currentBoxType.stock_qty || 0)
+  const nextStock = Math.max(0, stockBefore - usage.boxesUsed)
+  await env.DB.prepare(
+    `
+      UPDATE shipment_box_types
+      SET stock_qty = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `
+  )
+    .bind(nextStock, usage.boxTypeId)
+    .run()
+
+  return {
+    boxType: toShipmentBoxTypeResponse({ ...currentBoxType, stock_qty: nextStock }),
+    warning:
+      stockBefore < usage.boxesUsed
+        ? `Stock bajo para la caja ${currentBoxType.name}. Se descontaron ${usage.boxesUsed} y el inventario quedo en 0.`
+        : null,
+    boxesUsed: usage.boxesUsed
+  }
 }
 
 function normalizeParcelInput(
@@ -4649,14 +5103,19 @@ function normalizeParcelInput(
 
   if (boxPlanResult.boxPlan) {
     ;(parcel as Record<string, unknown>).box_plan = boxPlanResult.boxPlan
+    const boxTypeSnapshot = buildShipmentBoxTypeSnapshot(boxPlanResult.boxPlan)
+    if (boxTypeSnapshot) {
+      ;(parcel as Record<string, unknown>).box_type = boxTypeSnapshot
+    }
   }
 
   return { ok: true, parcel }
 }
 
-function getOrderShippingDestination(
+async function getOrderShippingDestination(
+  env: Env,
   order: Record<string, unknown>
-): Record<string, unknown> | null {
+): Promise<Record<string, unknown> | null> {
   const shippingAddress = toObjectRecord(order.shipping_address)
   const address = toObjectRecord(shippingAddress?.address)
   if (!address) return null
@@ -4683,10 +5142,12 @@ function getOrderShippingDestination(
   }
 
   const country = normalizeCountryCode(address.country, 'MX')
+  const postalCode = cleanText(address.postal_code)
   const normalizedState =
     country === 'MX'
       ? extractMxStateCodeFromValidation(addressValidation) ||
         normalizeMxStateCode(address.state) ||
+        (await lookupMxStateCodeByZip(env, postalCode, country)) ||
         cleanText(address.state)
       : cleanText(address.state)
 
@@ -4700,7 +5161,7 @@ function getOrderShippingDestination(
     city: cleanText(address.city),
     state: normalizedState,
     country,
-    postal_code: cleanText(address.postal_code)
+    postal_code: postalCode
   }
 }
 
@@ -4731,6 +5192,27 @@ async function getOriginAddress(env: Env): Promise<Record<string, unknown> | nul
     country,
     postal_code
   }
+}
+
+function listMissingShipmentAddressFields(
+  address: Record<string, unknown> | null,
+  label: 'origen' | 'destino'
+): string[] {
+  if (!address) return [`${label}.direccion`]
+
+  const requiredFields = [
+    'name',
+    'phone',
+    'street',
+    'city',
+    'state',
+    'country',
+    'postal_code'
+  ] as const
+
+  return requiredFields
+    .filter((field) => !cleanText(address[field]))
+    .map((field) => `${label}.${field}`)
 }
 
 function buildAddressPayload(address: Record<string, unknown>): Record<string, unknown> {
@@ -5136,9 +5618,19 @@ async function buildQuoteRequestPayload(
   requestedService: string | null = null
 ): Promise<Record<string, unknown>> {
   const origin = await getOriginAddress(env)
-  const destination = getOrderShippingDestination(order)
+  const destination = await getOrderShippingDestination(env, order)
   if (!origin || !destination) {
     throw new Error('Configuracion de origen o direccion destino incompleta para cotizar.')
+  }
+
+  const missingAddressFields = [
+    ...listMissingShipmentAddressFields(origin, 'origen'),
+    ...listMissingShipmentAddressFields(destination, 'destino')
+  ]
+  if (missingAddressFields.length > 0) {
+    throw new Error(
+      `Configuracion de origen o direccion destino incompleta para cotizar. Faltan: ${missingAddressFields.join(', ')}.`
+    )
   }
 
   const carrier = cleanText(requestedCarrier)
@@ -5384,7 +5876,7 @@ async function buildLabelRequestPayloads(
   boxPlan: Record<string, unknown> | null
 }> {
   const origin = await getOriginAddress(env)
-  const destination = getOrderShippingDestination(order)
+  const destination = await getOrderShippingDestination(env, order)
   if (!origin || !destination) {
     throw new Error('Configuracion de origen o direccion destino incompleta para generar la guia.')
   }
@@ -5638,7 +6130,8 @@ function summarizeShipmentStatusFromGuides(
   if (!statuses.length) return 'pending'
   if (statuses.every((status) => status === 'delivered')) return 'delivered'
   if (statuses.includes('lost')) return 'lost'
-  if (statuses.includes('cancelled')) return 'cancelled'
+  if (statuses.every((status) => status === 'cancelled')) return 'cancelled'
+  if (statuses.includes('cancelled')) return 'partially_cancelled'
   if (statuses.includes('in_transit')) return 'in_transit'
   if (statuses.includes('preparing')) return 'preparing'
   return 'pending'
@@ -5681,6 +6174,289 @@ async function pauseTrackingSyncForShipment(
     last_error: `Sync programado pausado: ${reason}`,
     last_error_code: SHIPMENT_ERROR_CODE_TRACKING_FORBIDDEN
   })
+}
+
+function resolveRemoteCancelableStatus(
+  remoteShipment: NormalizedRemoteShipment | null,
+  fallbackStatus: ShippingStatus
+): boolean {
+  if (remoteShipment?.cancelable != null) return remoteShipment.cancelable
+  return fallbackStatus === 'pending' || fallbackStatus === 'preparing'
+}
+
+function buildRemoteRefreshGuideResponse(
+  remoteShipment: NormalizedRemoteShipment | null,
+  tracking: ReturnType<typeof normalizeTrackingResult> | null,
+  checkedAt: string,
+  remoteCancelable: boolean
+): Record<string, unknown> {
+  return compactObject({
+    kind: 'remote_refresh',
+    remote_checked_at: checkedAt,
+    remote_cancelable: remoteCancelable,
+    remote_status_text: cleanText(remoteShipment?.status_text) || cleanText(tracking?.status),
+    remote_detail: remoteShipment,
+    tracking
+  }) as Record<string, unknown>
+}
+
+function buildCancelShipmentPayload(
+  guide: Record<string, unknown>,
+  remoteShipment: NormalizedRemoteShipment | null
+): Record<string, unknown> {
+  const shipmentId = cleanText(remoteShipment?.shipment_id) || cleanText(guide.envia_shipment_id)
+  const trackingNumber =
+    cleanText(remoteShipment?.tracking_number) || cleanText(guide.tracking_number)
+  const carrier = cleanText(remoteShipment?.carrier) || cleanText(guide.carrier)
+
+  return compactObject({
+    id: shipmentId,
+    shipment_id: shipmentId,
+    shipmentId: shipmentId,
+    tracking_number: trackingNumber,
+    trackingNumber: trackingNumber,
+    guide_number: trackingNumber,
+    guideNumber: trackingNumber,
+    carrier,
+    carrier_name: carrier
+  }) as Record<string, unknown>
+}
+
+async function refreshOrderShipmentFromRemote(
+  env: Env,
+  orderId: string,
+  source: 'admin' | 'detail_open' | 'cancel'
+): Promise<Record<string, unknown>> {
+  const order = await fetchOrderDetail(env, orderId)
+  if (!order) {
+    throw new Error('Pedido no encontrado.')
+  }
+
+  const shipment = toObjectRecord(order.shipment)
+  if (!shipment) {
+    throw new Error('El pedido no tiene registro de envio.')
+  }
+
+  const guideRecords = Array.isArray(shipment.guides)
+    ? shipment.guides.map((guide) => toObjectRecord(guide)).filter(Boolean)
+    : []
+  const guidesToSync =
+    guideRecords.length > 0 ? (guideRecords as Record<string, unknown>[]) : [shipment]
+  const checkedAt = new Date().toISOString()
+  const refreshedGuides: Array<Record<string, unknown>> = []
+
+  for (const guide of guidesToSync) {
+    const guideIndex = Number(guide.guide_index || refreshedGuides.length + 1)
+    const trackingNumber = cleanText(guide.tracking_number)
+    const shipmentId = cleanText(guide.envia_shipment_id)
+
+    let remoteShipment: NormalizedRemoteShipment | null = null
+    let trackingResult: ReturnType<typeof normalizeTrackingResult> | null = null
+    let remoteLookupError: unknown = null
+
+    try {
+      remoteShipment = await getRemoteShipment(env, {
+        shipmentId,
+        trackingNumber,
+        carrier: cleanText(guide.carrier)
+      })
+    } catch (error) {
+      remoteLookupError = error
+    }
+
+    if (trackingNumber) {
+      try {
+        trackingResult = await trackShipment(env, buildTrackingRequestPayload(guide))
+      } catch (error) {
+        if (!remoteShipment) {
+          throw error
+        }
+      }
+    } else if (!remoteShipment && remoteLookupError) {
+      throw remoteLookupError
+    }
+
+    const nextStatus = normalizeWorkerShippingStatus(
+      trackingResult?.status || remoteShipment?.status || guide.shipment_status
+    )
+    const remoteCancelable = resolveRemoteCancelableStatus(remoteShipment, nextStatus)
+    let labelKey = cleanText(guide.label_r2_key)
+    if (remoteShipment?.label_url || remoteShipment?.label_base64) {
+      labelKey =
+        (await storeShipmentLabel(
+          env,
+          orderId,
+          {
+            shipment_id: remoteShipment.shipment_id,
+            tracking_number: remoteShipment.tracking_number,
+            tracking_url: remoteShipment.tracking_url,
+            label_url: remoteShipment.label_url,
+            label_base64: remoteShipment.label_base64,
+            carrier: remoteShipment.carrier,
+            service: remoteShipment.service,
+            status: remoteShipment.status_text,
+            raw: remoteShipment.raw
+          },
+          guideIndex
+        )) || labelKey
+    }
+
+    refreshedGuides.push({
+      guide_index: guideIndex,
+      carrier: cleanText(remoteShipment?.carrier) || cleanText(trackingResult?.carrier) || cleanText(guide.carrier),
+      service: cleanText(remoteShipment?.service) || cleanText(guide.service),
+      tracking_number:
+        cleanText(trackingResult?.tracking_number) ||
+        cleanText(remoteShipment?.tracking_number) ||
+        trackingNumber,
+      tracking_url:
+        cleanText(trackingResult?.tracking_url) ||
+        cleanText(remoteShipment?.tracking_url) ||
+        cleanText(guide.tracking_url),
+      envia_shipment_id: cleanText(remoteShipment?.shipment_id) || shipmentId,
+      label_r2_key: labelKey,
+      parcel: toObjectRecord(guide.parcel) || safeParseJson(String(guide.parcel_json || '')),
+      envia_request: guide.envia_request ?? safeParseJson(String(guide.envia_request_json || '')),
+      envia_response: buildRemoteRefreshGuideResponse(
+        remoteShipment,
+        trackingResult,
+        checkedAt,
+        remoteCancelable
+      ),
+      shipment_status: nextStatus,
+      last_error: null
+    })
+  }
+
+  await replaceShipmentGuides(env, orderId, refreshedGuides)
+  const summary = summarizeShipmentHeaderFromGuides(refreshedGuides)
+  await upsertShipmentRow(env, orderId, {
+    shipment_status: summary.shipment_status,
+    tracking_url: summary.tracking_url || cleanText(shipment.tracking_url),
+    tracking_number: summary.tracking_number || cleanText(shipment.tracking_number),
+    carrier: summary.carrier || cleanText(shipment.carrier),
+    service: summary.service || cleanText(shipment.service),
+    envia_shipment_id: summary.envia_shipment_id || cleanText(shipment.envia_shipment_id),
+    label_r2_key: summary.label_r2_key || cleanText(shipment.label_r2_key),
+    envia_response_json: safeStringify({
+      kind: 'remote_refresh_summary',
+      remote_checked_at: checkedAt,
+      guides: refreshedGuides.map((guide) => guide.envia_response)
+    }),
+    last_sync_at: checkedAt,
+    last_error: null,
+    last_error_code: null,
+    tracking_sync_paused_at: null,
+    tracking_sync_pause_reason: null
+  })
+  await updateOrderShippingStatus(env, orderId, summary.shipment_status)
+  if (source !== 'detail_open') {
+    await insertShipmentEvent(env, orderId, 'remote_refreshed', source, {
+      guide_count: refreshedGuides.length,
+      guides: refreshedGuides,
+      remote_checked_at: checkedAt
+    })
+  }
+
+  const refreshed = await fetchOrderDetail(env, orderId)
+  return { success: true, order: refreshed }
+}
+
+async function cancelOrderShipmentGuide(
+  env: Env,
+  orderId: string,
+  guideIndex: number,
+  source: 'admin'
+): Promise<Record<string, unknown>> {
+  const order = await fetchOrderDetail(env, orderId)
+  if (!order) {
+    throw new Error('Pedido no encontrado.')
+  }
+
+  const shipment = toObjectRecord(order.shipment)
+  if (!shipment) {
+    throw new Error('El pedido no tiene registro de envio.')
+  }
+
+  const guideRecords = Array.isArray(shipment.guides)
+    ? shipment.guides.map((guide) => toObjectRecord(guide)).filter(Boolean)
+    : []
+  const targetGuide = guideRecords.find((guide) => Number(guide?.guide_index || 0) === guideIndex)
+  if (!targetGuide) {
+    throw new HttpError('Guia no encontrada.', 404, 'shipment_guide_not_found')
+  }
+
+  const remoteShipment = await getRemoteShipment(env, {
+    shipmentId: cleanText(targetGuide.envia_shipment_id),
+    trackingNumber: cleanText(targetGuide.tracking_number),
+    carrier: cleanText(targetGuide.carrier)
+  }).catch(() => null)
+  const currentStatus = normalizeWorkerShippingStatus(
+    remoteShipment?.status || targetGuide.shipment_status
+  )
+  const remoteCancelable = resolveRemoteCancelableStatus(remoteShipment, currentStatus)
+  if (!remoteCancelable) {
+    throw new HttpError(
+      'Envia no confirma que esta guia siga siendo cancelable.',
+      409,
+      'shipment_not_cancelable'
+    )
+  }
+
+  const cancelPayload = buildCancelShipmentPayload(targetGuide, remoteShipment)
+  if (!cleanText(cancelPayload.shipment_id) && !cleanText(cancelPayload.tracking_number)) {
+    throw new HttpError(
+      'No hay identificadores suficientes para cancelar la guia.',
+      409,
+      'shipment_identifiers_missing'
+    )
+  }
+
+  const cancelResult = await cancelShipment(env, cancelPayload)
+  await insertShipmentEvent(env, orderId, 'guide_cancel_requested', source, {
+    guide_index: guideIndex,
+    payload: cancelPayload,
+    provider_payload: cancelResult.payload
+  })
+
+  const refreshResult = await refreshOrderShipmentFromRemote(env, orderId, 'cancel').catch(async () => {
+    const nextGuides = guideRecords.map((guide) =>
+      Number(guide?.guide_index || 0) === guideIndex
+        ? {
+            ...guide,
+            shipment_status: 'cancelled',
+            envia_response: {
+              kind: 'cancelled_locally_after_provider_ack',
+              remote_checked_at: new Date().toISOString(),
+              provider_payload: cancelResult.payload,
+              remote_cancelable: false
+            },
+            last_error: null
+          }
+        : guide
+    )
+    await replaceShipmentGuides(env, orderId, nextGuides as Array<Record<string, unknown>>)
+    const summary = summarizeShipmentHeaderFromGuides(nextGuides as Array<Record<string, unknown>>)
+    await upsertShipmentRow(env, orderId, {
+      shipment_status: summary.shipment_status,
+      envia_response_json: safeStringify({
+        kind: 'cancel_fallback',
+        provider_payload: cancelResult.payload
+      }),
+      last_sync_at: new Date().toISOString(),
+      last_error: null,
+      last_error_code: null
+    })
+    await updateOrderShippingStatus(env, orderId, summary.shipment_status)
+    const refreshed = await fetchOrderDetail(env, orderId)
+    return { success: true, order: refreshed }
+  })
+
+  await insertShipmentEvent(env, orderId, 'guide_cancelled', source, {
+    guide_index: guideIndex,
+    provider_payload: cancelResult.payload
+  })
+  return refreshResult
 }
 
 async function handleGetOrderById(
@@ -5977,7 +6753,7 @@ async function quoteOrderShipment(
       throw error
     }
   } else {
-    const destination = getOrderShippingDestination(order)
+    const destination = await getOrderShippingDestination(env, order)
     const destinationCountry = cleanText(destination?.country) || 'MX'
     const discoveredCarriers = await listAvailableCarriers(env, destinationCountry).catch(
       () => [] as string[]
@@ -6548,17 +7324,14 @@ async function handleApproveShipmentByOrderId(
       selectedQuote
     )
     const labelRequests = labelBuild.requests
+    const shipmentBoxes = resolveShipmentBoxes(parcelResult.parcel)
     const createdGuides: Array<Record<string, unknown>> = []
     try {
       for (let index = 0; index < labelRequests.length; index += 1) {
         const labelPayload = labelRequests[index]
         const created = await createShippingLabel(env, labelPayload)
         const labelKey = await storeShipmentLabel(env, orderId, created, index + 1)
-        const requestPackage = toObjectRecord(
-          Array.isArray(labelPayload.packages)
-            ? labelPayload.packages[index > -1 ? 0 : index]
-            : null
-        )
+        const requestPackage = shipmentBoxes[index] || null
         createdGuides.push({
           guide_index: index + 1,
           carrier: created.carrier || selectedQuote.carrier,
@@ -6643,6 +7416,7 @@ async function handleApproveShipmentByOrderId(
 
     const summary = summarizeShipmentHeaderFromGuides(createdGuides)
     await replaceShipmentGuides(env, orderId, createdGuides)
+    const boxConsumption = await consumeShipmentBoxTypeStock(env, parcelResult.parcel, createdGuides.length)
 
     await upsertShipmentRow(env, orderId, {
       approval_status: 'approved',
@@ -6678,8 +7452,12 @@ async function handleApproveShipmentByOrderId(
       mode,
       quote: selectedQuote,
       guide_count: createdGuides.length,
-      shipments: createdGuides
+      shipments: createdGuides,
+      box_consumption: boxConsumption
     })
+    if (boxConsumption.boxType) {
+      await insertShipmentEvent(env, orderId, 'box_stock_consumed', 'admin', boxConsumption)
+    }
 
     const refreshed = await fetchOrderDetail(env, orderId)
     return json(request, env, { success: true, order: refreshed })
@@ -6896,6 +7674,449 @@ async function handleSyncShipmentByOrderId(
       request,
       env,
       { success: false, error: `Error sincronizando envio: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleGetShipmentBoxTypes(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipment-box-types:list:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    return json(request, env, { success: true, box_types: boxTypes })
+  } catch (error) {
+    workerError(requestId, 'shipment-box-types:list:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error obteniendo cajas: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleCreateShipmentBoxType(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipment-box-types:create:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentBoxTypePayload
+    const normalized = normalizeShipmentBoxTypePayload(payload)
+    if (!normalized.ok) {
+      return json(request, env, { success: false, error: normalized.error }, 400)
+    }
+
+    await ensureOrderShipmentsSchema(env, requestId)
+    await env.DB.prepare(
+      `
+        INSERT INTO shipment_box_types (
+          name,
+          code,
+          inner_length_cm,
+          inner_width_cm,
+          inner_height_cm,
+          max_products,
+          stock_qty,
+          is_active,
+          sort,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `
+    )
+      .bind(
+        normalized.values.name,
+        normalized.values.code ?? null,
+        normalized.values.inner_length_cm,
+        normalized.values.inner_width_cm,
+        normalized.values.inner_height_cm,
+        normalized.values.max_products,
+        normalized.values.stock_qty ?? 0,
+        normalized.values.is_active ?? 1,
+        normalized.values.sort ?? 100
+      )
+      .run()
+
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    return json(request, env, { success: true, box_types: boxTypes })
+  } catch (error) {
+    workerError(requestId, 'shipment-box-types:create:error', error)
+    const message = isUniqueConstraintError(error, 'shipment_box_types.code')
+      ? 'Ya existe una caja con ese codigo.'
+      : getErrorMessage(error)
+    return json(request, env, { success: false, error: message }, 500)
+  }
+}
+
+async function handleUpdateShipmentBoxType(
+  request: Request,
+  env: Env,
+  requestId: string,
+  boxTypeId: number
+): Promise<Response> {
+  workerLog(requestId, 'shipment-box-types:update:start', { boxTypeId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const existing = await fetchShipmentBoxTypeRow(env, boxTypeId)
+    if (!existing) {
+      return json(request, env, { success: false, error: 'Caja no encontrada.' }, 404)
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ShipmentBoxTypePayload
+    const normalized = normalizeShipmentBoxTypePayload(payload, { partial: true })
+    if (!normalized.ok) {
+      return json(request, env, { success: false, error: normalized.error }, 400)
+    }
+
+    const clauses = Object.keys(normalized.values).map((key) => `${key} = ?`)
+    const values = Object.values(normalized.values)
+    await env.DB.prepare(
+      `
+        UPDATE shipment_box_types
+        SET ${clauses.join(', ')}, updated_at = datetime('now')
+        WHERE id = ?
+      `
+    )
+      .bind(...values, boxTypeId)
+      .run()
+
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    return json(request, env, { success: true, box_types: boxTypes })
+  } catch (error) {
+    workerError(requestId, 'shipment-box-types:update:error', error)
+    const message = isUniqueConstraintError(error, 'shipment_box_types.code')
+      ? 'Ya existe una caja con ese codigo.'
+      : getErrorMessage(error)
+    return json(request, env, { success: false, error: message }, 500)
+  }
+}
+
+async function handleDeleteShipmentBoxType(
+  request: Request,
+  env: Env,
+  requestId: string,
+  boxTypeId: number
+): Promise<Response> {
+  workerLog(requestId, 'shipment-box-types:delete:start', { boxTypeId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const existing = await fetchShipmentBoxTypeRow(env, boxTypeId)
+    if (!existing) {
+      return json(request, env, { success: false, error: 'Caja no encontrada.' }, 404)
+    }
+
+    await env.DB.prepare('DELETE FROM shipment_box_types WHERE id = ?').bind(boxTypeId).run()
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    return json(request, env, { success: true, box_types: boxTypes })
+  } catch (error) {
+    workerError(requestId, 'shipment-box-types:delete:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error eliminando caja: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleRemoteRefreshShipmentByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:remote-refresh:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const sourceParam = String(new URL(request.url).searchParams.get('source') || '').trim()
+    const source = sourceParam === 'detail_open' ? 'detail_open' : 'admin'
+    const response = await refreshOrderShipmentFromRemote(env, orderId, source)
+    return json(request, env, response)
+  } catch (error) {
+    workerError(requestId, 'shipments:remote-refresh:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
+    return json(
+      request,
+      env,
+      {
+        success: false,
+        error: `Error refrescando envio desde Envia: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
+    )
+  }
+}
+
+async function handleCancelShipmentGuideByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string,
+  guideIndex: number
+): Promise<Response> {
+  workerLog(requestId, 'shipments:guide-cancel:start', { orderId, guideIndex })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const response = await cancelOrderShipmentGuide(env, orderId, guideIndex, 'admin')
+    return json(request, env, response)
+  } catch (error) {
+    workerError(requestId, 'shipments:guide-cancel:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
+    return json(
+      request,
+      env,
+      {
+        success: false,
+        error: `Error cancelando guia: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
+    )
+  }
+}
+
+async function handleCancelAllShipmentGuidesByOrderId(
+  request: Request,
+  env: Env,
+  requestId: string,
+  orderId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:cancel-all:start', { orderId })
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    const order = await fetchOrderDetail(env, orderId)
+    if (!order) {
+      return json(request, env, { success: false, error: 'Pedido no encontrado.' }, 404)
+    }
+
+    const shipment = toObjectRecord(order.shipment)
+    const guides = Array.isArray(shipment?.guides)
+      ? shipment?.guides.map((guide) => toObjectRecord(guide)).filter(Boolean)
+      : []
+    if (!guides.length) {
+      return json(request, env, { success: false, error: 'Este pedido no tiene guias.' }, 409)
+    }
+
+    const cancelledGuides: number[] = []
+    const failedGuides: Array<Record<string, unknown>> = []
+    let latestOrder: Record<string, unknown> | null = order
+
+    for (const guide of guides as Array<Record<string, unknown>>) {
+      const guideIndex = Number(guide.guide_index || 0)
+      if (!guideIndex || normalizeWorkerShippingStatus(guide.shipment_status) === 'cancelled') continue
+      try {
+        const response = await cancelOrderShipmentGuide(env, orderId, guideIndex, 'admin')
+        latestOrder = toObjectRecord(response.order) || latestOrder
+        cancelledGuides.push(guideIndex)
+      } catch (error) {
+        failedGuides.push({
+          guide_index: guideIndex,
+          error: getErrorMessage(error),
+          code: getErrorCode(error)
+        })
+      }
+    }
+
+    if (cancelledGuides.length === 0 && failedGuides.length > 0) {
+      return json(
+        request,
+        env,
+        {
+          success: false,
+          error: 'No se pudo cancelar ninguna guia.',
+          failed_guides: failedGuides,
+          order: latestOrder
+        },
+        409
+      )
+    }
+
+    await insertShipmentEvent(env, orderId, 'cancel_all_completed', 'admin', {
+      cancelled_guides: cancelledGuides,
+      failed_guides: failedGuides
+    })
+
+    return json(request, env, {
+      success: true,
+      order: latestOrder,
+      cancelled_guides: cancelledGuides,
+      failed_guides: failedGuides,
+      warning:
+        failedGuides.length > 0
+          ? `Se cancelaron ${cancelledGuides.length} guia(s), pero ${failedGuides.length} fallaron.`
+          : null
+    })
+  } catch (error) {
+    workerError(requestId, 'shipments:cancel-all:error', error)
+    const status = getHttpStatus(error, 500)
+    const code = getErrorCode(error)
+    return json(
+      request,
+      env,
+      {
+        success: false,
+        error: `Error cancelando guias: ${getErrorMessage(error)}`,
+        ...(code ? { code } : {})
+      },
+      status
+    )
+  }
+}
+
+async function handleResetShipmentTempStorage(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'shipments:reset-temp:start')
+  try {
+    const authResult = assertAdminToken(request, env)
+    if (!authResult.ok) {
+      return json(request, env, { success: false, error: authResult.error }, authResult.status)
+    }
+
+    await ensureOrdersAdminSchema(env, requestId)
+    await ensureOrderShipmentsSchema(env, requestId)
+
+    const [shipmentLabelRows, guideLabelRows] = await Promise.all([
+      env.DB.prepare(
+        `
+          SELECT label_r2_key
+          FROM order_shipments
+          WHERE label_r2_key IS NOT NULL AND TRIM(label_r2_key) <> ''
+        `
+      ).all<{ label_r2_key: string | null }>(),
+      env.DB.prepare(
+        `
+          SELECT label_r2_key
+          FROM order_shipment_guides
+          WHERE label_r2_key IS NOT NULL AND TRIM(label_r2_key) <> ''
+        `
+      ).all<{ label_r2_key: string | null }>()
+    ])
+
+    const labelKeys = [
+      ...(shipmentLabelRows.results || []).map((row) => cleanText(row.label_r2_key)),
+      ...(guideLabelRows.results || []).map((row) => cleanText(row.label_r2_key))
+    ].filter((key): key is string => Boolean(key))
+
+    const uniqueLabelKeys = [...new Set(labelKeys)]
+    const labelDeleteResults = await Promise.allSettled(
+      uniqueLabelKeys.map((key) => env.ASSETS_BUCKET.delete(key))
+    )
+    const labelObjectsDeleted = labelDeleteResults.filter((result) => result.status === 'fulfilled')
+      .length
+    const labelObjectsDeleteFailed = labelDeleteResults.length - labelObjectsDeleted
+
+    const [guidesDeleteResult, eventsDeleteResult, shipmentsResetResult, ordersResetResult] =
+      await Promise.all([
+        env.DB.prepare('DELETE FROM order_shipment_guides').run(),
+        env.DB.prepare('DELETE FROM order_shipment_events').run(),
+        env.DB.prepare(
+          `
+            UPDATE order_shipments
+            SET
+              approval_status = 'pending',
+              shipment_status = 'pending',
+              carrier = NULL,
+              service = NULL,
+              tracking_number = NULL,
+              tracking_url = NULL,
+              envia_shipment_id = NULL,
+              label_r2_key = NULL,
+              quote_amount_cents = NULL,
+              parcel_json = NULL,
+              envia_request_json = NULL,
+              envia_response_json = NULL,
+              approved_at = NULL,
+              rejected_at = NULL,
+              rejected_reason = NULL,
+              last_sync_at = NULL,
+              last_error = NULL,
+              last_error_code = NULL,
+              tracking_sync_paused_at = NULL,
+              tracking_sync_pause_reason = NULL,
+              updated_at = datetime('now')
+          `
+        ).run(),
+        env.DB.prepare(
+          `
+            UPDATE orders
+            SET shipping_status = 'pending', updated_at = datetime('now')
+            WHERE status <> 'unpaid'
+          `
+        ).run()
+      ])
+
+    enviaHealthCache = null
+    enviaMxStateCodeCache.clear()
+
+    workerLog(requestId, 'shipments:reset-temp:ok', {
+      shipmentsReset: getChangesFromRun(shipmentsResetResult),
+      ordersReset: getChangesFromRun(ordersResetResult),
+      eventsCleared: getChangesFromRun(eventsDeleteResult),
+      guidesCleared: getChangesFromRun(guidesDeleteResult),
+      labelObjectsDeleted,
+      labelObjectsDeleteFailed
+    })
+
+    return json(request, env, {
+      success: true,
+      shipments_reset: getChangesFromRun(shipmentsResetResult),
+      orders_reset: getChangesFromRun(ordersResetResult),
+      shipment_events_cleared: getChangesFromRun(eventsDeleteResult),
+      shipment_guides_cleared: getChangesFromRun(guidesDeleteResult),
+      label_objects_deleted: labelObjectsDeleted,
+      label_objects_delete_failed: labelObjectsDeleteFailed
+    })
+  } catch (error) {
+    workerError(requestId, 'shipments:reset-temp:error', error)
+    return json(
+      request,
+      env,
+      {
+        success: false,
+        error: `Error limpiando almacenamiento temporal de envios: ${getErrorMessage(error)}`
+      },
       500
     )
   }
@@ -7254,6 +8475,8 @@ export default {
     const orderId = getOrderIdFromPath(pathname)
     const shipmentOrderId = getShipmentOrderIdFromPath(pathname)
     const shipmentActionRoute = getShipmentActionRoute(pathname)
+    const shipmentGuideActionRoute = getShipmentGuideActionRoute(pathname)
+    const shipmentBoxTypeId = getShipmentBoxTypeIdFromPath(pathname)
     workerLog(requestId, 'request:start', {
       method: request.method,
       pathname,
@@ -7264,7 +8487,9 @@ export default {
       productTypeId,
       orderId,
       shipmentOrderId,
-      shipmentActionRoute
+      shipmentActionRoute,
+      shipmentGuideActionRoute,
+      shipmentBoxTypeId
     })
 
     if (request.method === 'OPTIONS') {
@@ -7323,6 +8548,51 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/shipments') {
       const response = await handleGetShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/shipment-box-types') {
+      const response = await handleGetShipmentBoxTypes(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'POST' && pathname === '/api/shipment-box-types') {
+      const response = await handleCreateShipmentBoxType(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (shipmentBoxTypeId !== null && request.method === 'PUT') {
+      const response = await handleUpdateShipmentBoxType(request, env, requestId, shipmentBoxTypeId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (shipmentBoxTypeId !== null && request.method === 'DELETE') {
+      const response = await handleDeleteShipmentBoxType(request, env, requestId, shipmentBoxTypeId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'POST' && pathname === '/api/shipments/reset-temp') {
+      const response = await handleResetShipmentTempStorage(request, env, requestId)
       workerLog(requestId, 'request:done', {
         status: response.status,
         elapsedMs: Date.now() - startedAt
@@ -7418,6 +8688,61 @@ export default {
         env,
         requestId,
         shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'remote-refresh' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleRemoteRefreshShipmentByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentActionRoute &&
+      shipmentActionRoute.action === 'cancel-all' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleCancelAllShipmentGuidesByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentActionRoute.orderId
+      )
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (
+      shipmentGuideActionRoute &&
+      shipmentGuideActionRoute.action === 'cancel' &&
+      request.method === 'POST'
+    ) {
+      const response = await handleCancelShipmentGuideByOrderId(
+        request,
+        env,
+        requestId,
+        shipmentGuideActionRoute.orderId,
+        shipmentGuideActionRoute.guideIndex
       )
       workerLog(requestId, 'request:done', {
         status: response.status,

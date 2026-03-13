@@ -62,6 +62,8 @@ const api = {
     payload: EnsureShipmentLabelFilesPayload
   ): Promise<EnsureShipmentLabelFilesResult> =>
     ipcRenderer.invoke('ensure-shipment-label-files', payload),
+  clearShipmentLabelFiles: (): Promise<LocalFileActionResult> =>
+    ipcRenderer.invoke('clear-shipment-label-files'),
   openLocalFile: (filePath: string): Promise<LocalFileActionResult> =>
     ipcRenderer.invoke('open-local-file', filePath),
   showItemInFolder: (filePath: string): Promise<LocalFileActionResult> =>

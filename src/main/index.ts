@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -398,6 +398,23 @@ app.whenReady().then(() => {
       }
     }
   )
+
+  ipcMain.handle('clear-shipment-label-files', async (): Promise<LocalFileActionResult> => {
+    try {
+      const folderPath = resolveShipmentLabelsFolderPath()
+      await rm(folderPath, { recursive: true, force: true })
+      await mkdir(folderPath, { recursive: true })
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo limpiar el almacenamiento local de guias.'
+      }
+    }
+  })
 
   ipcMain.handle('open-local-file', async (_, filePath: string): Promise<LocalFileActionResult> => {
     try {

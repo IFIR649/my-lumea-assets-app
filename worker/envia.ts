@@ -55,6 +55,20 @@ export type NormalizedTrackingResult = {
   raw: unknown
 }
 
+export type NormalizedRemoteShipment = {
+  shipment_id: string | null
+  tracking_number: string | null
+  tracking_url: string | null
+  label_url: string | null
+  label_base64: string | null
+  carrier: string | null
+  service: string | null
+  status: NormalizedTrackingResult['status']
+  status_text: string | null
+  cancelable: boolean | null
+  raw: unknown
+}
+
 const DEFAULT_TIMEOUT_MS = 45000
 const GEOCODE_PATHS = [
   (zip: string, country = 'MX') =>
@@ -69,6 +83,10 @@ const CARRIER_QUERY_PATHS = [
   (country: string) => `/carrier?country_code=${encodeURIComponent(country)}`,
   (country: string) => `/carrier?country=${encodeURIComponent(country)}`,
   (country: string) => `/carrier?code=${encodeURIComponent(country)}`
+]
+const AVAILABLE_CARRIER_PATHS = [
+  (country: string) => `/available-carrier/${encodeURIComponent(country)}/0`,
+  (country: string) => `/available-carrier/${encodeURIComponent(country)}/1`
 ]
 const SERVICE_QUERY_PATHS = [
   (country: string, carrier: string | null) =>
@@ -91,7 +109,29 @@ const DEFAULT_PRINT_SETTINGS_PATHS = [
 const QUOTE_PATHS = ['/ship/rate/', '/ship/rates/', '/ship/quote/']
 const LABEL_PATHS = ['/ship/generate/', '/ship/create/', '/ship/labels/']
 const TRACK_PATHS = ['/ship/generaltrack/', '/ship/track/']
+const CANCEL_PATHS = ['/ship/cancel/', '/ship/cancel']
 const QUERIES_PATHS = ['/webhook-types', '/carriers', '/shipments?limit=1']
+const SHIPMENT_BY_ID_QUERY_PATHS = [
+  (shipmentId: string) => `/shipments/${encodeURIComponent(shipmentId)}`,
+  (shipmentId: string) => `/shipment/${encodeURIComponent(shipmentId)}`,
+  (shipmentId: string) => `/shipments?id=${encodeURIComponent(shipmentId)}`,
+  (shipmentId: string) => `/shipments?shipment_id=${encodeURIComponent(shipmentId)}`,
+  (shipmentId: string) => `/shipment?id=${encodeURIComponent(shipmentId)}`
+]
+const SHIPMENT_BY_TRACKING_QUERY_PATHS = [
+  (tracking: string) => `/shipments?tracking_number=${encodeURIComponent(tracking)}`,
+  (tracking: string) => `/shipments?tracking=${encodeURIComponent(tracking)}`,
+  (tracking: string) => `/shipments?guide_number=${encodeURIComponent(tracking)}`,
+  (tracking: string) => `/shipment?tracking_number=${encodeURIComponent(tracking)}`
+]
+const SHIPMENTS_BY_MONTH_QUERY_PATHS = [
+  (month: number, year: number, limit: number) =>
+    `/shipments?month=${month}&year=${year}&limit=${limit}`,
+  (month: number, year: number, limit: number) =>
+    `/shipments?year=${year}&month=${month}&limit=${limit}`,
+  (month: number, year: number, limit: number) =>
+    `/shipment?month=${month}&year=${year}&limit=${limit}`
+]
 
 export class EnviaConfigError extends Error {
   code = 'envia_config_error'
@@ -465,6 +505,33 @@ async function tryGeocodePaths(
   )
 }
 
+async function requestQueriesPayload(
+  config: ReturnType<typeof assertConfig>,
+  path: string
+): Promise<unknown | null> {
+  const result = await fetchJson(
+    `${config.queriesBaseUrl}${path}`,
+    {
+      method: 'GET',
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
+    },
+    config.timeoutMs
+  )
+  if (result.status === 404 || result.status === 400) return null
+  if (!result.ok || hasProviderError(result.payload)) {
+    throw buildRequestError(result, 'Envia queries fallo')
+  }
+  return result.payload
+}
+
+function monthYearOffsets(count: number): Array<{ month: number; year: number }> {
+  const base = new Date()
+  return Array.from({ length: count }, (_, index) => {
+    const current = new Date(base.getUTCFullYear(), base.getUTCMonth() - index, 1)
+    return { month: current.getMonth() + 1, year: current.getFullYear() }
+  })
+}
+
 function buildHeaders(apiKey: string): HeadersInit {
   return {
     accept: 'application/json',
@@ -505,7 +572,19 @@ function truthyValue(value: unknown): boolean | null {
 
 function topLevelObjects(payload: unknown): JsonRecord[] {
   const record = toRecord(payload)
-  const pools = [payload, record?.data, record?.results, record?.items]
+  const dataRecord = pickRecord(record?.data)
+  const pools = [
+    payload,
+    record?.data,
+    record?.results,
+    record?.items,
+    record?.carriers,
+    record?.services,
+    dataRecord?.carriers,
+    dataRecord?.services,
+    dataRecord?.results,
+    dataRecord?.items
+  ]
   const out: JsonRecord[] = []
   for (const pool of pools) {
     if (Array.isArray(pool)) {
@@ -513,8 +592,16 @@ function topLevelObjects(payload: unknown): JsonRecord[] {
         const object = toRecord(item)
         if (object) out.push(object)
       }
-      if (out.length) return out
+    } else {
+      const object = toRecord(pool)
+      if (object) {
+        for (const value of Object.values(object)) {
+          const nested = toRecord(value)
+          if (nested) out.push(nested)
+        }
+      }
     }
+    if (out.length) return out
   }
   return out
 }
@@ -525,11 +612,221 @@ function normalizeCarrierNames(payload: unknown): string[] {
     .map((item) => {
       const active = truthyValue(item.active ?? item.enabled ?? item.available)
       if (active === false) return ''
-      return pickString(item.name, item.carrier, item.slug, item.code, item.carrier_name)
+      return pickString(
+        item.name,
+        item.carrier_name,
+        item.carrier,
+        item.slug,
+        item.code,
+        item.provider_name
+      )
     })
     .filter(Boolean)
 
   return [...new Set(names)]
+}
+
+function hasShipmentLikeKeys(record: JsonRecord): boolean {
+  const keys = Object.keys(record).map((key) => key.toLowerCase())
+  return keys.some((key) =>
+    ['shipment', 'tracking', 'guide', 'label', 'carrier', 'service', 'cancel', 'status'].some(
+      (token) => key.includes(token)
+    )
+  )
+}
+
+function getShipmentIdentifier(item: JsonRecord): string {
+  const direct = pickString(
+    item.shipment_id,
+    item.shipmentId,
+    item.envia_shipment_id,
+    item.enviaShipmentId
+  )
+  if (direct) return direct
+  return hasShipmentLikeKeys(item) ? pickString(item.id) : ''
+}
+
+function getShipmentTrackingNumber(item: JsonRecord): string {
+  return pickString(
+    item.tracking_number,
+    item.trackingNumber,
+    item.guide_number,
+    item.guideNumber,
+    item.number
+  )
+}
+
+function getShipmentLabelUrl(item: JsonRecord): string {
+  return pickString(
+    item.label_url,
+    item.labelUrl,
+    item.label,
+    item.pdf,
+    item.file,
+    item.url,
+    item.document_url,
+    item.documentUrl
+  )
+}
+
+function getShipmentLabelBase64(item: JsonRecord): string {
+  return pickString(item.label_base64, item.labelBase64, item.base64, item.content)
+}
+
+function getShipmentCarrier(item: JsonRecord): string {
+  return pickString(
+    item.carrier_name,
+    item.carrierName,
+    item.provider_name,
+    item.providerName,
+    item.provider,
+    item.company,
+    getQuoteCarrier(item)
+  )
+}
+
+function getShipmentService(item: JsonRecord): string {
+  return pickString(
+    item.service_name,
+    item.serviceName,
+    item.service_type,
+    item.serviceType,
+    item.shipping_service,
+    item.shippingService,
+    getQuoteService(item)
+  )
+}
+
+function getShipmentStatusText(item: JsonRecord): string {
+  const statusRecord = pickRecord(item.status, item.shipment_status, item.shipmentStatus)
+  const currentStatusRecord = pickRecord(item.current_status, item.currentStatus)
+  return pickString(
+    typeof item.status === 'string' ? item.status : '',
+    item.shipment_status,
+    item.shipmentStatus,
+    item.current_status,
+    item.currentStatus,
+    item.description,
+    statusRecord?.name,
+    statusRecord?.status,
+    statusRecord?.description,
+    currentStatusRecord?.name,
+    currentStatusRecord?.status,
+    currentStatusRecord?.description
+  )
+}
+
+function getShipmentCancelable(item: JsonRecord): boolean | null {
+  const cancelRecord = pickRecord(item.cancel, item.cancelation, item.cancellation)
+  const actions = pickRecord(item.actions, item.available_actions, item.availableActions)
+  const candidates = [
+    item.can_cancel,
+    item.canCancel,
+    item.cancelable,
+    item.cancellable,
+    item.is_cancelable,
+    item.isCancelable,
+    item.can_void,
+    item.canVoid,
+    item.voidable,
+    cancelRecord?.can_cancel,
+    cancelRecord?.cancelable,
+    cancelRecord?.is_cancelable,
+    actions?.cancel,
+    actions?.void
+  ]
+  for (const candidate of candidates) {
+    const normalized = truthyValue(candidate)
+    if (normalized !== null) return normalized
+  }
+  return null
+}
+
+function looksLikeRemoteShipmentCandidate(item: JsonRecord): boolean {
+  return Boolean(
+    getShipmentIdentifier(item) ||
+      getShipmentTrackingNumber(item) ||
+      getShipmentStatusText(item) ||
+      getShipmentCarrier(item) ||
+      getShipmentLabelUrl(item) ||
+      getShipmentLabelBase64(item)
+  )
+}
+
+function normalizeRemoteShipmentRecord(
+  item: JsonRecord,
+  payload: unknown
+): NormalizedRemoteShipment | null {
+  if (!looksLikeRemoteShipmentCandidate(item)) return null
+  const statusText = getShipmentStatusText(item)
+  return {
+    shipment_id: getShipmentIdentifier(item) || null,
+    tracking_number: getShipmentTrackingNumber(item) || null,
+    tracking_url: pickString(item.tracking_url, item.trackingUrl, item.track_url) || null,
+    label_url: getShipmentLabelUrl(item) || null,
+    label_base64: getShipmentLabelBase64(item) || null,
+    carrier: getShipmentCarrier(item) || null,
+    service: getShipmentService(item) || null,
+    status: normalizeShipmentStatus(statusText),
+    status_text: statusText || null,
+    cancelable: getShipmentCancelable(item),
+    raw: payload
+  }
+}
+
+function normalizeRemoteShipmentCollection(payload: unknown): NormalizedRemoteShipment[] {
+  const normalized = collectObjectCandidates(payload)
+    .map((item) => normalizeRemoteShipmentRecord(item, payload))
+    .filter((item): item is NormalizedRemoteShipment => Boolean(item))
+
+  const seen = new Set<string>()
+  return normalized.filter((item) => {
+    const key = [
+      String(item.shipment_id || '').toLowerCase(),
+      String(item.tracking_number || '').toLowerCase(),
+      String(item.carrier || '').toLowerCase(),
+      String(item.service || '').toLowerCase(),
+      item.status
+    ].join('::')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function sameIdentifier(left: string | null | undefined, right: string | null | undefined): boolean {
+  return Boolean(left && right && String(left).trim().toLowerCase() === String(right).trim().toLowerCase())
+}
+
+function findMatchingRemoteShipment(
+  candidates: NormalizedRemoteShipment[],
+  identifiers: {
+    shipmentId?: string | null
+    trackingNumber?: string | null
+    carrier?: string | null
+  }
+): NormalizedRemoteShipment | null {
+  const shipmentId = pickString(identifiers.shipmentId)
+  const trackingNumber = pickString(identifiers.trackingNumber)
+  const carrier = pickString(identifiers.carrier).toLowerCase()
+
+  let best: NormalizedRemoteShipment | null = null
+  let bestScore = -1
+
+  for (const candidate of candidates) {
+    let score = 0
+    if (shipmentId && sameIdentifier(candidate.shipment_id, shipmentId)) score += 10
+    if (trackingNumber && sameIdentifier(candidate.tracking_number, trackingNumber)) score += 8
+    if (carrier && candidate.carrier?.toLowerCase() === carrier) score += 2
+    if (candidate.cancelable === true) score += 1
+    if (candidate.status !== 'pending') score += 1
+    if (score > bestScore) {
+      best = candidate
+      bestScore = score
+    }
+  }
+
+  return bestScore > 0 ? best : null
 }
 
 function normalizeServiceNames(payload: unknown, carrier: string | null = null): string[] {
@@ -920,7 +1217,7 @@ export async function listAvailableCarriers(
   const headers = { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
   let lastError: EnviaRequestError | null = null
 
-  for (const buildPath of CARRIER_QUERY_PATHS) {
+  for (const buildPath of [...CARRIER_QUERY_PATHS, ...AVAILABLE_CARRIER_PATHS]) {
     const result = await fetchJson(
       `${config.queriesBaseUrl}${buildPath(countryCode)}`,
       { method: 'GET', headers },
@@ -1047,6 +1344,93 @@ export async function trackShipment(
   }
 
   return normalizeTrackingResult(result.payload)
+}
+
+export async function listShipmentsByMonth(
+  env: EnviaEnvLike,
+  options: { month: number; year: number; limit?: number | null }
+): Promise<NormalizedRemoteShipment[]> {
+  const config = assertConfig(env)
+  const limit = pickNumber(options.limit, 100) || 100
+  for (const buildPath of SHIPMENTS_BY_MONTH_QUERY_PATHS) {
+    try {
+      const payload = await requestQueriesPayload(config, buildPath(options.month, options.year, limit))
+      if (!payload) continue
+      const shipments = normalizeRemoteShipmentCollection(payload)
+      if (shipments.length > 0) return shipments
+    } catch (error) {
+      if (error instanceof EnviaRequestError && error.status === 404) continue
+      throw error
+    }
+  }
+  return []
+}
+
+export async function getRemoteShipment(
+  env: EnviaEnvLike,
+  identifiers: {
+    shipmentId?: string | null
+    trackingNumber?: string | null
+    carrier?: string | null
+  }
+): Promise<NormalizedRemoteShipment | null> {
+  const config = assertConfig(env)
+  const shipmentId = pickString(identifiers.shipmentId)
+  const trackingNumber = pickString(identifiers.trackingNumber)
+  const directLookups = [
+    ...(shipmentId ? SHIPMENT_BY_ID_QUERY_PATHS.map((buildPath) => buildPath(shipmentId)) : []),
+    ...(trackingNumber
+      ? SHIPMENT_BY_TRACKING_QUERY_PATHS.map((buildPath) => buildPath(trackingNumber))
+      : [])
+  ]
+
+  for (const path of directLookups) {
+    try {
+      const payload = await requestQueriesPayload(config, path)
+      if (!payload) continue
+      const match = findMatchingRemoteShipment(
+        normalizeRemoteShipmentCollection(payload),
+        identifiers
+      )
+      if (match) return match
+    } catch (error) {
+      if (error instanceof EnviaRequestError && (error.status === 404 || error.status === 400)) {
+        continue
+      }
+      throw error
+    }
+  }
+
+  for (const { month, year } of monthYearOffsets(6)) {
+    const shipments = await listShipmentsByMonth(env, { month, year, limit: 200 }).catch(() => [])
+    const match = findMatchingRemoteShipment(shipments, identifiers)
+    if (match) return match
+  }
+
+  return null
+}
+
+export async function cancelShipment(
+  env: EnviaEnvLike,
+  payload: JsonRecord
+): Promise<{ payload: unknown }> {
+  const config = assertConfig(env)
+  const headers = buildHeaders(config.apiKey)
+  const result = await tryJsonPaths(
+    config.shippingBaseUrl,
+    CANCEL_PATHS,
+    { method: 'POST', headers, body: JSON.stringify(payload) },
+    config.timeoutMs
+  )
+
+  if (!result.ok) {
+    throw buildRequestError(result, 'Envia cancel fallo')
+  }
+  if (hasProviderError(result.payload)) {
+    throw buildRequestError(result, 'Envia cancel fallo')
+  }
+
+  return { payload: result.payload }
 }
 
 export async function downloadLabelBinary(env: EnviaEnvLike, url: string): Promise<ArrayBuffer> {

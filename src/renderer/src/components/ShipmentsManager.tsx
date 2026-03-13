@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   FileText,
   MapPin,
   Package,
+  Pencil,
+  Plus,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
+  Trash2,
   Truck,
   XCircle
 } from 'lucide-react'
@@ -15,8 +21,39 @@ import { cn } from '../lib/utils'
 
 type Msg = { type: 'error' | 'success' | 'info'; text: string } | null
 
-type ShipmentStatus = 'pending' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled' | 'lost'
+type ShipmentStatus =
+  | 'pending'
+  | 'preparing'
+  | 'in_transit'
+  | 'delivered'
+  | 'partially_cancelled'
+  | 'cancelled'
+  | 'lost'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+type ShipmentBoxType = {
+  id: number
+  name: string
+  code: string | null
+  inner_length_cm: number
+  inner_width_cm: number
+  inner_height_cm: number
+  max_products: number
+  stock_qty: number
+  is_active: boolean
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
+type ShipmentBoxSnapshot = {
+  box_type_id?: number | null
+  box_type_name?: string | null
+  box_type_code?: string | null
+  inner_length_cm?: number | null
+  inner_width_cm?: number | null
+  inner_height_cm?: number | null
+}
 
 type ShipmentSummary = {
   id: string
@@ -71,6 +108,10 @@ type ShipmentGuide = {
   envia_request: unknown
   envia_response: unknown
   shipment_status: ShipmentStatus
+  remote_cancelable?: boolean | null
+  remote_status_text?: string | null
+  remote_checked_at?: string | null
+  box_type?: ShipmentBoxSnapshot | null
   last_error: string | null
   created_at: string
   updated_at: string
@@ -103,6 +144,10 @@ type ShipmentRecord = {
   last_error_code: string | null
   tracking_sync_paused_at: string | null
   tracking_sync_pause_reason: string | null
+  remote_cancelable?: boolean | null
+  remote_status_text?: string | null
+  remote_checked_at?: string | null
+  box_type?: ShipmentBoxSnapshot | null
   guides: ShipmentGuide[]
   created_at: string
   updated_at: string
@@ -183,6 +228,18 @@ type QuoteState = {
   invalidated: boolean
 }
 
+type ShipmentBoxTypeForm = {
+  name: string
+  code: string
+  inner_length_cm: string
+  inner_width_cm: string
+  inner_height_cm: string
+  max_products: string
+  stock_qty: string
+  is_active: boolean
+  sort: string
+}
+
 type ShipmentListResponse = {
   success: boolean
   shipments?: ShipmentSummary[]
@@ -208,6 +265,29 @@ type ShipmentOptionsResponse = {
   carriers?: string[]
   services?: string[]
   error?: string
+}
+
+type ShipmentResetTempResponse = {
+  success: boolean
+  shipments_reset?: number
+  orders_reset?: number
+  shipment_events_cleared?: number
+  shipment_guides_cleared?: number
+  label_objects_deleted?: number
+  label_objects_delete_failed?: number
+  error?: string
+}
+
+type ShipmentBoxTypesResponse = {
+  success: boolean
+  box_types?: ShipmentBoxType[]
+  error?: string
+}
+
+type ShipmentMutationResponse = ShipmentDetailResponse & {
+  warning?: string | null
+  failed_guides?: Array<{ guide_index: number; error: string; code?: string | null }>
+  cancelled_guides?: number[]
 }
 
 type ShipmentApprovePreviewResponse = {
@@ -262,6 +342,18 @@ const EMPTY_PARCEL_FORM: ParcelForm = {
   notes: '',
   carrier: '',
   service: ''
+}
+
+const EMPTY_BOX_TYPE_FORM: ShipmentBoxTypeForm = {
+  name: '',
+  code: '',
+  inner_length_cm: '10',
+  inner_width_cm: '10',
+  inner_height_cm: '10',
+  max_products: '1',
+  stock_qty: '0',
+  is_active: true,
+  sort: '100'
 }
 
 const AUTO_QUOTE_FIELDS = new Set<keyof ParcelForm>([
@@ -422,6 +514,7 @@ function statusLabel(status: ShipmentStatus): string {
   if (status === 'preparing') return 'Preparando'
   if (status === 'in_transit') return 'En transito'
   if (status === 'delivered') return 'Entregado'
+  if (status === 'partially_cancelled') return 'Cancelado parcial'
   if (status === 'cancelled') return 'Cancelado'
   if (status === 'lost') return 'Perdido'
   return 'Pendiente'
@@ -437,6 +530,7 @@ function statusClass(status: ShipmentStatus): string {
   if (status === 'preparing') return 'border-amber-400/35 bg-amber-500/15 text-amber-200'
   if (status === 'in_transit') return 'border-sky-400/35 bg-sky-500/15 text-sky-200'
   if (status === 'delivered') return 'border-emerald-400/35 bg-emerald-500/15 text-emerald-200'
+  if (status === 'partially_cancelled') return 'border-amber-300/35 bg-amber-400/15 text-amber-100'
   if (status === 'cancelled') return 'border-rose-400/35 bg-rose-500/15 text-rose-200'
   if (status === 'lost') return 'border-orange-400/35 bg-orange-500/15 text-orange-200'
   return 'border-zinc-400/35 bg-zinc-500/15 text-zinc-200'
@@ -487,6 +581,29 @@ function formatJson(value: unknown): string {
 
 function hasDesktopApi(): boolean {
   return typeof window !== 'undefined' && Boolean(window.api?.ensureShipmentLabelFiles)
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  const text = value.trim()
+  if (!text) throw new Error('No hay ruta para copiar.')
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const success = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  if (!success) {
+    throw new Error('No se pudo copiar la ruta al portapapeles.')
+  }
 }
 
 function buildPackageRequestFromForm(form: ParcelForm): Record<string, unknown> {
@@ -565,12 +682,14 @@ function readPositiveInteger(value: unknown, fallback: number | null = null): nu
 }
 
 function getStoredBoxPlanBoxes(order: ShipmentOrder | null): {
+  boxTypeId: string
   productsPerBox: string
   boxes: BoxPlanBox[]
 } {
   const unitsTotal = readPositiveInteger(order?.summary?.units_total, 1) || 1
   const parcel = toRecord(order?.shipment?.parcel)
   const boxPlan = toRecord(parcel?.box_plan)
+  const firstBox = Array.isArray(boxPlan?.boxes) ? toRecord(boxPlan?.boxes[0]) : null
   const rawBoxes = Array.isArray(boxPlan?.boxes) ? boxPlan.boxes : []
   const boxes = rawBoxes
     .map((entry, index) => {
@@ -592,6 +711,10 @@ function getStoredBoxPlanBoxes(order: ShipmentOrder | null): {
 
   if (boxes.length > 1) {
     return {
+      boxTypeId:
+        readText(boxPlan?.box_type_id) ||
+        readText(firstBox?.box_type_id) ||
+        readText(toRecord(parcel?.box_type)?.box_type_id),
       productsPerBox:
         readText(boxPlan?.products_per_box) ||
         String(boxes.reduce((max, box) => Math.max(max, Number(box.units_in_box || 0)), 1)),
@@ -600,19 +723,44 @@ function getStoredBoxPlanBoxes(order: ShipmentOrder | null): {
   }
 
   return {
-    productsPerBox: String(unitsTotal),
+    boxTypeId:
+      readText(boxPlan?.box_type_id) ||
+      readText(firstBox?.box_type_id) ||
+      readText(toRecord(parcel?.box_type)?.box_type_id),
+    productsPerBox: readText(boxPlan?.products_per_box) || String(unitsTotal),
     boxes: []
   }
 }
 
 function buildBoxPlanPayload(
   productsPerBox: string,
-  boxes: BoxPlanBox[]
+  boxes: BoxPlanBox[],
+  selectedBoxType: ShipmentBoxType | null
 ): Record<string, unknown> | null {
-  if (boxes.length <= 1) return null
+  const boxTypeSnapshot = selectedBoxType
+    ? {
+        box_type_id: selectedBoxType.id,
+        box_type_name: selectedBoxType.name,
+        box_type_code: selectedBoxType.code,
+        inner_length_cm: selectedBoxType.inner_length_cm,
+        inner_width_cm: selectedBoxType.inner_width_cm,
+        inner_height_cm: selectedBoxType.inner_height_cm
+      }
+    : null
+
+  if (boxes.length <= 1 && !boxTypeSnapshot) return null
+
   return {
+    ...(boxTypeSnapshot || {}),
     products_per_box: productsPerBox.trim(),
-    boxes: boxes.map((box) => buildPackageRequestFromBox(box))
+    ...(boxes.length > 1
+      ? {
+          boxes: boxes.map((box) => ({
+            ...buildPackageRequestFromBox(box),
+            ...(boxTypeSnapshot || {})
+          }))
+        }
+      : {})
   }
 }
 
@@ -760,6 +908,10 @@ function getShipmentGuides(order: ShipmentOrder | null): ShipmentGuide[] {
       envia_request: order.shipment.envia_request,
       envia_response: order.shipment.envia_response,
       shipment_status: order.shipment.shipment_status,
+      remote_cancelable: order.shipment.remote_cancelable,
+      remote_status_text: order.shipment.remote_status_text,
+      remote_checked_at: order.shipment.remote_checked_at,
+      box_type: order.shipment.box_type,
       last_error: order.shipment.last_error,
       created_at: order.shipment.created_at,
       updated_at: order.shipment.updated_at
@@ -782,6 +934,10 @@ export default function ShipmentsManager(): React.JSX.Element {
   const [approvedLoading, setApprovedLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [remoteRefreshLoading, setRemoteRefreshLoading] = useState(false)
+  const [resetTempLoading, setResetTempLoading] = useState(false)
+  const [boxTypesLoading, setBoxTypesLoading] = useState(false)
+  const [boxTypeSaving, setBoxTypeSaving] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | ''>('')
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<ShipmentOrder | null>(null)
@@ -804,6 +960,10 @@ export default function ShipmentsManager(): React.JSX.Element {
   const [debugRequestShipmentType, setDebugRequestShipmentType] = useState<number | null>(null)
   const [debugRequestGuideCount, setDebugRequestGuideCount] = useState<number | null>(null)
   const [debugRequestMissingFields, setDebugRequestMissingFields] = useState<string[]>([])
+  const [boxTypes, setBoxTypes] = useState<ShipmentBoxType[]>([])
+  const [editingBoxTypeId, setEditingBoxTypeId] = useState<number | null>(null)
+  const [boxTypeForm, setBoxTypeForm] = useState<ShipmentBoxTypeForm>(EMPTY_BOX_TYPE_FORM)
+  const [selectedBoxTypeId, setSelectedBoxTypeId] = useState('')
   const [boxPlanProductsPerBox, setBoxPlanProductsPerBox] = useState('1')
   const [boxPlanBoxes, setBoxPlanBoxes] = useState<BoxPlanBox[]>([])
   const [localLabelFiles, setLocalLabelFiles] = useState<Record<string, ShipmentLabelFile>>({})
@@ -849,9 +1009,13 @@ export default function ShipmentsManager(): React.JSX.Element {
   const currentQuotes = currentQuoteState.quotes
   const currentQuoteInvalidated = currentQuoteState.invalidated
   const currentGuides = useMemo(() => getShipmentGuides(selectedOrder), [selectedOrder])
+  const selectedBoxType = useMemo(
+    () => boxTypes.find((boxType) => String(boxType.id) === selectedBoxTypeId) || null,
+    [boxTypes, selectedBoxTypeId]
+  )
   const boxPlanPayload = useMemo(
-    () => buildBoxPlanPayload(boxPlanProductsPerBox, boxPlanBoxes),
-    [boxPlanProductsPerBox, boxPlanBoxes]
+    () => buildBoxPlanPayload(boxPlanProductsPerBox, boxPlanBoxes, selectedBoxType),
+    [boxPlanProductsPerBox, boxPlanBoxes, selectedBoxType]
   )
   const isMultiGuidePlan = boxPlanBoxes.length > 1
   const boxPlanUnitsAssigned = useMemo(
@@ -882,6 +1046,14 @@ export default function ShipmentsManager(): React.JSX.Element {
       .map((quote) => quote.service)
     return [...new Set([...availableServices, ...quotedServices].filter(Boolean))].sort()
   }, [availableServices, manualQuoteState.quotes, manualParcelForm.carrier])
+  const activeBoxTypes = useMemo(
+    () => boxTypes.filter((boxType) => boxType.is_active),
+    [boxTypes]
+  )
+  const requiredBoxCount = selectedBoxType ? Math.max(boxPlanBoxes.length, 1) : 0
+  const selectedBoxTypeLowStock = Boolean(
+    selectedBoxType && requiredBoxCount > 0 && selectedBoxType.stock_qty < requiredBoxCount
+  )
 
   const resetDebugRequest = (): void => {
     setShowDebugRequest(false)
@@ -902,6 +1074,7 @@ export default function ShipmentsManager(): React.JSX.Element {
     setAvailableCarriers([])
     setAvailableServices([])
     setRejectReason('')
+    setSelectedBoxTypeId('')
     setBoxPlanProductsPerBox('1')
     setBoxPlanBoxes([])
     setLocalLabelFiles({})
@@ -940,6 +1113,7 @@ export default function ShipmentsManager(): React.JSX.Element {
     setSelectedOrder(order)
     setAutoParcelForm(parcelFormFromOrder(order, snapshot, 'auto'))
     setManualParcelForm(parcelFormFromOrder(order, snapshot, 'manual'))
+    setSelectedBoxTypeId(nextBoxPlan.boxTypeId)
     setBoxPlanProductsPerBox(nextBoxPlan.productsPerBox)
     setBoxPlanBoxes(nextBoxPlan.boxes)
     setLocalLabelFiles({})
@@ -1127,6 +1301,192 @@ export default function ShipmentsManager(): React.JSX.Element {
     }
   }
 
+  const openGuidePdfFile = async (guide: ShipmentGuide): Promise<void> => {
+    if (!selectedOrder) return
+    const ensured = await ensureLocalGuideFiles(selectedOrder)
+    const file = ensured[getGuideLocalFileKey(selectedOrder.id, guide.guide_index)]
+    if (!file) {
+      throw new Error('No se encontro una copia local de la guia.')
+    }
+    const result = await window.api.openLocalFile(file.path)
+    if (!result.success) {
+      throw new Error(result.error)
+    }
+  }
+
+  const copyGuidePdfPath = async (guide: ShipmentGuide): Promise<void> => {
+    if (!selectedOrder) return
+    const ensured = await ensureLocalGuideFiles(selectedOrder)
+    const file = ensured[getGuideLocalFileKey(selectedOrder.id, guide.guide_index)]
+    if (!file) {
+      throw new Error('No se encontro una copia local de la guia.')
+    }
+    await copyTextToClipboard(file.path)
+  }
+
+  const resetBoxTypeEditor = (): void => {
+    setEditingBoxTypeId(null)
+    setBoxTypeForm(EMPTY_BOX_TYPE_FORM)
+  }
+
+  const loadShipmentBoxTypes = async (token = adminToken): Promise<void> => {
+    if (!normalizeAdminToken(token)) {
+      setBoxTypes([])
+      resetBoxTypeEditor()
+      return
+    }
+
+    setBoxTypesLoading(true)
+    try {
+      const response = await requestJson<ShipmentBoxTypesResponse>('/api/shipment-box-types', {
+        headers: buildAuthHeaders(token)
+      })
+      if (!response.success) {
+        throw new Error(response.error || 'No se pudieron cargar los tipos de caja.')
+      }
+      setBoxTypes(response.box_types || [])
+    } finally {
+      setBoxTypesLoading(false)
+    }
+  }
+
+  const saveShipmentBoxType = async (): Promise<void> => {
+    if (!normalizeAdminToken(adminToken)) {
+      setMsg({ type: 'error', text: 'Ingresa el Bearer admin antes de guardar cajas.' })
+      return
+    }
+
+    setBoxTypeSaving(true)
+    setMsg({ type: 'info', text: editingBoxTypeId ? 'Actualizando caja...' : 'Guardando caja...' })
+    try {
+      const response = await requestJson<ShipmentBoxTypesResponse>(
+        editingBoxTypeId
+          ? `/api/shipment-box-types/${editingBoxTypeId}`
+          : '/api/shipment-box-types',
+        {
+          method: editingBoxTypeId ? 'PUT' : 'POST',
+          headers: buildAuthHeaders(adminToken, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            ...boxTypeForm,
+            code: boxTypeForm.code.trim(),
+            name: boxTypeForm.name.trim()
+          })
+        }
+      )
+      if (!response.success) {
+        throw new Error(response.error || 'No se pudo guardar la caja.')
+      }
+      setBoxTypes(response.box_types || [])
+      resetBoxTypeEditor()
+      setMsg({ type: 'success', text: 'Catalogo de cajas actualizado.' })
+    } catch (error) {
+      setMsg({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Error guardando caja.'
+      })
+    } finally {
+      setBoxTypeSaving(false)
+    }
+  }
+
+  const deleteShipmentBoxType = async (boxType: ShipmentBoxType): Promise<void> => {
+    if (!normalizeAdminToken(adminToken)) {
+      setMsg({ type: 'error', text: 'Ingresa el Bearer admin antes de eliminar cajas.' })
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Se eliminara la caja "${boxType.name}". El historial de envios conservara solo el snapshot guardado.`
+    )
+    if (!confirmed) return
+
+    setBoxTypeSaving(true)
+    setMsg({ type: 'info', text: 'Eliminando caja...' })
+    try {
+      const response = await requestJson<ShipmentBoxTypesResponse>(
+        `/api/shipment-box-types/${boxType.id}`,
+        {
+          method: 'DELETE',
+          headers: buildAuthHeaders(adminToken)
+        }
+      )
+      if (!response.success) {
+        throw new Error(response.error || 'No se pudo eliminar la caja.')
+      }
+      setBoxTypes(response.box_types || [])
+      if (editingBoxTypeId === boxType.id) {
+        resetBoxTypeEditor()
+      }
+      if (selectedBoxTypeId === String(boxType.id)) {
+        setSelectedBoxTypeId('')
+      }
+      setMsg({ type: 'success', text: 'Caja eliminada.' })
+    } catch (error) {
+      setMsg({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Error eliminando caja.'
+      })
+    } finally {
+      setBoxTypeSaving(false)
+    }
+  }
+
+  const startEditingBoxType = (boxType: ShipmentBoxType): void => {
+    setEditingBoxTypeId(boxType.id)
+    setBoxTypeForm({
+      name: boxType.name,
+      code: boxType.code || '',
+      inner_length_cm: String(boxType.inner_length_cm),
+      inner_width_cm: String(boxType.inner_width_cm),
+      inner_height_cm: String(boxType.inner_height_cm),
+      max_products: String(boxType.max_products),
+      stock_qty: String(boxType.stock_qty),
+      is_active: boxType.is_active,
+      sort: String(boxType.sort)
+    })
+  }
+
+  const applyBoxTypeSelection = (boxTypeId: string): void => {
+    setSelectedBoxTypeId(boxTypeId)
+    const boxType = boxTypes.find((entry) => String(entry.id) === boxTypeId) || null
+    if (!boxType || !selectedOrder) {
+      invalidateAllQuoteSelections()
+      return
+    }
+
+    const template = {
+      ...currentParcelForm,
+      length_cm: String(boxType.inner_length_cm),
+      width_cm: String(boxType.inner_width_cm),
+      height_cm: String(boxType.inner_height_cm)
+    }
+
+    setAutoParcelForm((current) => ({
+      ...current,
+      length_cm: String(boxType.inner_length_cm),
+      width_cm: String(boxType.inner_width_cm),
+      height_cm: String(boxType.inner_height_cm)
+    }))
+    setManualParcelForm((current) => ({
+      ...current,
+      length_cm: String(boxType.inner_length_cm),
+      width_cm: String(boxType.inner_width_cm),
+      height_cm: String(boxType.inner_height_cm)
+    }))
+    setBoxPlanProductsPerBox(String(boxType.max_products))
+
+    const unitsTotal = readPositiveInteger(selectedOrder.summary.units_total, 1) || 1
+    if (boxType.max_products < unitsTotal) {
+      setBoxPlanBoxes(
+        generateBoxPlanBoxes(boxType.max_products, unitsTotal, template, selectedOrder.total_amount_cents)
+      )
+    } else {
+      setBoxPlanBoxes([])
+    }
+
+    invalidateAllQuoteSelections()
+  }
+
   const loadEnviaOptions = async (
     token = adminToken,
     carrier = manualParcelForm.carrier.trim()
@@ -1229,6 +1589,9 @@ export default function ShipmentsManager(): React.JSX.Element {
       setAvailableCarriers([])
       setAvailableServices([])
       setRejectReason(response.order.shipment?.rejected_reason || '')
+      if (response.order.shipment?.approval_status === 'approved') {
+        void remoteRefreshShipment(orderId, token, true)
+      }
     } finally {
       if (detailRequestIdRef.current === requestId) {
         setDetailLoading(false)
@@ -1265,6 +1628,7 @@ export default function ShipmentsManager(): React.JSX.Element {
 
   useEffect(() => {
     void refreshLists()
+    void loadShipmentBoxTypes()
   }, [statusFilter, adminToken])
 
   useEffect(() => {
@@ -1505,31 +1869,200 @@ export default function ShipmentsManager(): React.JSX.Element {
     }
   }
 
-  const syncShipment = async (): Promise<void> => {
-    if (!selectedOrderId) return
-    setActionLoading(true)
-    setMsg({ type: 'info', text: 'Sincronizando estado con Envia...' })
+  const remoteRefreshShipment = async (
+    orderId = selectedOrderId,
+    token = adminToken,
+    silent = false
+  ): Promise<void> => {
+    if (!orderId) return
+    if (!silent) {
+      setActionLoading(true)
+      setMsg({ type: 'info', text: 'Consultando Envia en vivo...' })
+    }
+    setRemoteRefreshLoading(true)
     try {
-      const response = await requestJson<ShipmentDetailResponse>(
-        `/api/shipments/${selectedOrderId}/sync`,
+      const response = await requestJson<ShipmentMutationResponse>(
+        `/api/shipments/${orderId}/remote-refresh${silent ? '?source=detail_open' : ''}`,
+        {
+          method: 'POST',
+          headers: buildAuthHeaders(token)
+        },
+        60000
+      )
+      if (!response.success || !response.order) {
+        throw new Error(response.error || 'No se pudo refrescar el envio.')
+      }
+      if (selectedOrderIdRef.current === orderId) {
+        applyOrderQuoteState(response.order)
+        if (hasDesktopApi()) {
+          await ensureLocalGuideFiles(response.order).catch(() => null)
+        }
+      }
+      await refreshLists(token)
+      if (!silent) {
+        setMsg({
+          type: 'success',
+          text: response.warning || 'Estado remoto actualizado desde Envia.'
+        })
+      }
+    } catch (error) {
+      if (!silent) {
+        setMsg({
+          type: 'error',
+          text: error instanceof Error ? error.message : 'Error refrescando el envio.'
+        })
+      }
+    } finally {
+      setRemoteRefreshLoading(false)
+      if (!silent) {
+        setActionLoading(false)
+      }
+    }
+  }
+
+  const cancelGuide = async (guide: ShipmentGuide): Promise<void> => {
+    if (!selectedOrderId) return
+    const confirmed = window.confirm(
+      `Se cancelara la guia ${guide.guide_index}${guide.tracking_number ? ` (${guide.tracking_number})` : ''} directamente en Envia si aun es cancelable.`
+    )
+    if (!confirmed) return
+
+    setActionLoading(true)
+    setMsg({ type: 'info', text: `Cancelando guia ${guide.guide_index} en Envia...` })
+    try {
+      const response = await requestJson<ShipmentMutationResponse>(
+        `/api/shipments/${selectedOrderId}/guides/${guide.guide_index}/cancel`,
         {
           method: 'POST',
           headers: buildAuthHeaders(adminToken)
-        }
+        },
+        60000
       )
       if (!response.success || !response.order) {
-        throw new Error(response.error || 'No se pudo sincronizar el envio.')
+        throw new Error(response.error || 'No se pudo cancelar la guia.')
       }
       applyOrderQuoteState(response.order)
-      setMsg({ type: 'success', text: 'Estado de envio sincronizado.' })
       await refreshLists()
+      setMsg({ type: 'success', text: 'Guia cancelada desde Envia.' })
     } catch (error) {
       setMsg({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Error sincronizando envio.'
+        text: error instanceof Error ? error.message : 'Error cancelando la guia.'
       })
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const cancelAllGuides = async (): Promise<void> => {
+    if (!selectedOrderId) return
+    const confirmed = window.confirm(
+      'Se intentaran cancelar todas las guias activas de este pedido directamente en Envia.'
+    )
+    if (!confirmed) return
+
+    setActionLoading(true)
+    setMsg({ type: 'info', text: 'Cancelando guias en Envia...' })
+    try {
+      const response = await requestJson<ShipmentMutationResponse>(
+        `/api/shipments/${selectedOrderId}/cancel-all`,
+        {
+          method: 'POST',
+          headers: buildAuthHeaders(adminToken)
+        },
+        90000
+      )
+      if (!response.success || !response.order) {
+        throw new Error(response.error || 'No se pudieron cancelar las guias.')
+      }
+      applyOrderQuoteState(response.order)
+      await refreshLists()
+      setMsg({
+        type: response.failed_guides?.length ? 'info' : 'success',
+        text:
+          response.warning ||
+          (response.cancelled_guides?.length
+            ? `Se cancelaron ${response.cancelled_guides.length} guia(s).`
+            : 'No habia guias cancelables.')
+      })
+    } catch (error) {
+      setMsg({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Error cancelando las guias.'
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const resetAllShipmentTempStorage = async (): Promise<void> => {
+    if (!normalizeAdminToken(adminToken)) {
+      setMsg({ type: 'error', text: 'Ingresa el Bearer admin antes de limpiar envios.' })
+      return
+    }
+
+    const confirmed = window.confirm(
+      'Esto limpiara cotizaciones, guias, tracking, eventos y cache local de PDFs de todos los envios. No cancela guias ya creadas en Envia. ¿Continuar?'
+    )
+    if (!confirmed) return
+
+    setResetTempLoading(true)
+    setMsg({ type: 'info', text: 'Limpiando almacenamiento temporal de envios...' })
+
+    try {
+      const response = await requestJson<ShipmentResetTempResponse>(
+        '/api/shipments/reset-temp',
+        {
+          method: 'POST',
+          headers: buildAuthHeaders(adminToken)
+        },
+        60000
+      )
+
+      if (!response.success) {
+        throw new Error(response.error || 'No se pudo limpiar el almacenamiento temporal.')
+      }
+
+      let localCleanupError: string | null = null
+      if (window.api?.clearShipmentLabelFiles) {
+        const localResult = await window.api.clearShipmentLabelFiles()
+        if (!localResult.success) {
+          localCleanupError = localResult.error
+        }
+      }
+
+      setSelectedOrderId(null)
+      resetSelectedShipmentState()
+      await Promise.all([loadPending(adminToken), loadApproved(adminToken, statusFilter)])
+
+      const summary = [
+        `Envios reiniciados: ${response.shipments_reset ?? 0}.`,
+        `Eventos borrados: ${response.shipment_events_cleared ?? 0}.`,
+        `Guias borradas: ${response.shipment_guides_cleared ?? 0}.`,
+        `Etiquetas R2 eliminadas: ${response.label_objects_deleted ?? 0}.`
+      ].join(' ')
+
+      const failedDeletes = Number(response.label_objects_delete_failed || 0)
+      const warning =
+        failedDeletes > 0 ? ` Fallaron ${failedDeletes} eliminaciones en R2.` : ''
+      const localWarning = localCleanupError
+        ? ` No se pudo limpiar la cache local de PDFs: ${localCleanupError}`
+        : ''
+
+      setMsg({
+        type: 'success',
+        text: `${summary}${warning}${localWarning} El reset es local; no cancela guias ya creadas en Envia.`
+      })
+    } catch (error) {
+      setMsg({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Error limpiando almacenamiento temporal de envios.'
+      })
+    } finally {
+      setResetTempLoading(false)
     }
   }
 
@@ -1660,7 +2193,7 @@ export default function ShipmentsManager(): React.JSX.Element {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
             <label className="min-w-[260px] rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
               <span className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
                 Bearer admin
@@ -1694,12 +2227,23 @@ export default function ShipmentsManager(): React.JSX.Element {
             <button
               type="button"
               onClick={() => void refreshLists()}
+              disabled={resetTempLoading}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 hover:bg-white/10"
             >
               <RefreshCw
                 className={cn('h-4 w-4', (pendingLoading || approvedLoading) && 'animate-spin')}
               />
               Recargar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void resetAllShipmentTempStorage()}
+              disabled={!hasToken || resetTempLoading || actionLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <XCircle className={cn('h-4 w-4', resetTempLoading && 'animate-pulse')} />
+              Limpiar temporal
             </button>
 
             <div className="flex items-center rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300">
@@ -1729,6 +2273,236 @@ export default function ShipmentsManager(): React.JSX.Element {
           <span>{msg.text}</span>
         </div>
       )}
+
+      <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-brand/70">Operacion</p>
+            <h3 className="mt-1 text-lg font-semibold text-zinc-100">Catalogo de cajas</h3>
+            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+              Administra medidas internas, capacidad y stock. El envio guarda snapshot de la caja
+              elegida al momento de generar guias.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => resetBoxTypeEditor()}
+            disabled={boxTypeSaving}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" />
+            Nueva caja
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-3">
+            {!hasToken ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
+                Ingresa el token admin para administrar el catalogo de cajas.
+              </div>
+            ) : boxTypesLoading ? (
+              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-400">
+                Cargando cajas...
+              </div>
+            ) : boxTypes.length === 0 ? (
+              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
+                Aun no hay tipos de caja registrados.
+              </div>
+            ) : (
+              boxTypes.map((boxType) => (
+                <div
+                  key={boxType.id}
+                  className={cn(
+                    'rounded-2xl border p-4',
+                    selectedBoxTypeId === String(boxType.id)
+                      ? 'border-brand/30 bg-brand/10'
+                      : 'border-white/8 bg-black/20'
+                  )}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-zinc-100">{boxType.name}</p>
+                        {!boxType.is_active && (
+                          <span className="rounded-full border border-zinc-400/25 bg-zinc-500/10 px-2 py-0.5 text-[11px] font-semibold text-zinc-300">
+                            Inactiva
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {boxType.code || 'Sin codigo'} • {boxType.inner_length_cm} x{' '}
+                        {boxType.inner_width_cm} x {boxType.inner_height_cm} cm
+                      </p>
+                      <p className="mt-2 text-xs text-zinc-400">
+                        Capacidad: {boxType.max_products} producto(s) • Stock: {boxType.stock_qty}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedOrder && (
+                        <button
+                          type="button"
+                          onClick={() => applyBoxTypeSelection(String(boxType.id))}
+                          className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-black"
+                        >
+                          Usar en este envio
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => startEditingBoxType(boxType)}
+                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteShipmentBoxType(boxType)}
+                        className="rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+            <p className="text-sm font-semibold text-zinc-100">
+              {editingBoxTypeId ? 'Editar caja' : 'Registrar caja'}
+            </p>
+            <div className="mt-4 grid gap-3">
+              <label className="space-y-2 text-xs text-zinc-400">
+                <span>Nombre</span>
+                <input
+                  value={boxTypeForm.name}
+                  onChange={(event) =>
+                    setBoxTypeForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                />
+              </label>
+              <label className="space-y-2 text-xs text-zinc-400">
+                <span>Codigo</span>
+                <input
+                  value={boxTypeForm.code}
+                  onChange={(event) =>
+                    setBoxTypeForm((current) => ({ ...current, code: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Largo</span>
+                  <input
+                    value={boxTypeForm.inner_length_cm}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({
+                        ...current,
+                        inner_length_cm: event.target.value
+                      }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Ancho</span>
+                  <input
+                    value={boxTypeForm.inner_width_cm}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({
+                        ...current,
+                        inner_width_cm: event.target.value
+                      }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Alto</span>
+                  <input
+                    value={boxTypeForm.inner_height_cm}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({
+                        ...current,
+                        inner_height_cm: event.target.value
+                      }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Max. productos</span>
+                  <input
+                    value={boxTypeForm.max_products}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({
+                        ...current,
+                        max_products: event.target.value
+                      }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Stock</span>
+                  <input
+                    value={boxTypeForm.stock_qty}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({ ...current, stock_qty: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-xs text-zinc-400">
+                  <span>Orden</span>
+                  <input
+                    value={boxTypeForm.sort}
+                    onChange={(event) =>
+                      setBoxTypeForm((current) => ({ ...current, sort: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={boxTypeForm.is_active}
+                  onChange={(event) =>
+                    setBoxTypeForm((current) => ({ ...current, is_active: event.target.checked }))
+                  }
+                />
+                Activa
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void saveShipmentBoxType()}
+                disabled={!hasToken || boxTypeSaving}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {editingBoxTypeId ? 'Actualizar caja' : 'Guardar caja'}
+              </button>
+              <button
+                type="button"
+                onClick={() => resetBoxTypeEditor()}
+                disabled={boxTypeSaving}
+                className="rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[360px_360px_minmax(0,1fr)]">
         <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
@@ -1772,7 +2546,15 @@ export default function ShipmentsManager(): React.JSX.Element {
 
           <div className="mt-4 flex flex-wrap gap-2">
             {(
-              ['', 'preparing', 'in_transit', 'delivered', 'cancelled', 'lost'] as Array<
+              [
+                '',
+                'preparing',
+                'in_transit',
+                'delivered',
+                'partially_cancelled',
+                'cancelled',
+                'lost'
+              ] as Array<
                 ShipmentStatus | ''
               >
             ).map((status) => (
@@ -2130,6 +2912,47 @@ export default function ShipmentsManager(): React.JSX.Element {
                   )}
                 </div>
 
+                <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                    <label className="space-y-2 text-xs text-zinc-400">
+                      <span>Tipo de caja</span>
+                      <select
+                        value={selectedBoxTypeId}
+                        onChange={(event) => applyBoxTypeSelection(event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                      >
+                        <option value="">Sin tipo de caja fijo</option>
+                        {activeBoxTypes.map((boxType) => (
+                          <option key={boxType.id} value={boxType.id}>
+                            {boxType.name} ({boxType.max_products} prod / stock {boxType.stock_qty})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedBoxType && (
+                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-300">
+                        <p className="font-semibold text-zinc-100">{selectedBoxType.name}</p>
+                        <p className="mt-1">
+                          Interno: {selectedBoxType.inner_length_cm} x {selectedBoxType.inner_width_cm}{' '}
+                          x {selectedBoxType.inner_height_cm} cm
+                        </p>
+                        <p className="mt-1">
+                          Capacidad: {selectedBoxType.max_products} producto(s) por caja
+                        </p>
+                        <p className="mt-1">Stock actual: {selectedBoxType.stock_qty}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedBoxType && selectedBoxTypeLowStock && (
+                    <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                      Stock bajo: para este plan se requieren al menos {requiredBoxCount} caja(s) y
+                      solo hay {selectedBoxType.stock_qty} registradas. La aprobacion seguira
+                      disponible, pero conviene ajustar inventario o elegir otra caja.
+                    </div>
+                  )}
+                </div>
+
                 {selectedOrder.summary.units_total > 1 && (
                   <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -2433,12 +3256,25 @@ export default function ShipmentsManager(): React.JSX.Element {
                   {isApprovedSelection && (
                     <button
                       type="button"
-                      onClick={() => void syncShipment()}
-                      disabled={actionLoading}
+                      onClick={() => void remoteRefreshShipment()}
+                      disabled={actionLoading || remoteRefreshLoading}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <RefreshCw className={cn('h-4 w-4', actionLoading && 'animate-spin')} />
-                      Sincronizar estado
+                      <RefreshCw
+                        className={cn('h-4 w-4', remoteRefreshLoading && 'animate-spin')}
+                      />
+                      Refresh Envia
+                    </button>
+                  )}
+                  {isApprovedSelection && currentGuides.some((guide) => guide.remote_cancelable) && (
+                    <button
+                      type="button"
+                      onClick={() => void cancelAllGuides()}
+                      disabled={actionLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Cancelar todas
                     </button>
                   )}
                 </div>
@@ -2475,6 +3311,16 @@ export default function ShipmentsManager(): React.JSX.Element {
                       <p className="mt-1">
                         Ultimo sync: {formatDate(selectedOrder.shipment.last_sync_at)}
                       </p>
+                      {selectedOrder.shipment.remote_status_text && (
+                        <p className="mt-1">
+                          Estado remoto: {selectedOrder.shipment.remote_status_text}
+                        </p>
+                      )}
+                      {selectedOrder.shipment.box_type?.box_type_name && (
+                        <p className="mt-1">
+                          Caja: {selectedOrder.shipment.box_type.box_type_name}
+                        </p>
+                      )}
                       {selectedOrder.shipment.tracking_sync_paused_at && (
                         <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                           Sync pausado:{' '}
@@ -2509,13 +3355,54 @@ export default function ShipmentsManager(): React.JSX.Element {
                                       {guide.carrier || 'Carrier pendiente'} /{' '}
                                       {guide.service || 'Servicio pendiente'}
                                     </p>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <span
+                                        className={cn(
+                                          'rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+                                          statusClass(guide.shipment_status)
+                                        )}
+                                      >
+                                        {statusLabel(guide.shipment_status)}
+                                      </span>
+                                      {guide.remote_cancelable && (
+                                        <span className="rounded-full border border-sky-400/25 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
+                                          Cancelable en Envia
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  {localFile?.exists && (
-                                    <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
-                                      PDF local listo
-                                    </span>
-                                  )}
+                                  <div className="flex flex-wrap gap-2">
+                                    {localFile?.exists && (
+                                      <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
+                                        PDF local listo
+                                      </span>
+                                    )}
+                                    {guide.box_type?.box_type_name && (
+                                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200">
+                                        {guide.box_type.box_type_name}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+                                {(guide.remote_status_text ||
+                                  guide.remote_checked_at ||
+                                  guide.box_type?.box_type_code) && (
+                                  <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
+                                    {guide.remote_status_text && (
+                                      <p>Estado remoto: {guide.remote_status_text}</p>
+                                    )}
+                                    {guide.remote_checked_at && (
+                                      <p className="mt-1">
+                                        Ultima consulta Envia: {formatDate(guide.remote_checked_at)}
+                                      </p>
+                                    )}
+                                    {guide.box_type?.box_type_code && (
+                                      <p className="mt-1">
+                                        Caja: {guide.box_type.box_type_code}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {guide.label_url && (
                                     <a
@@ -2554,7 +3441,25 @@ export default function ShipmentsManager(): React.JSX.Element {
                                         }
                                         className="rounded-xl bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-500/20"
                                       >
-                                        Ver
+                                        Ver PDF
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void openGuidePdfFile(guide).catch((error) =>
+                                            setMsg({
+                                              type: 'error',
+                                              text:
+                                                error instanceof Error
+                                                  ? error.message
+                                                  : 'No se pudo abrir el archivo.'
+                                            })
+                                          )
+                                        }
+                                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                        Abrir archivo
                                       </button>
                                       <button
                                         type="button"
@@ -2593,6 +3498,31 @@ export default function ShipmentsManager(): React.JSX.Element {
                                       <button
                                         type="button"
                                         onClick={() =>
+                                          void copyGuidePdfPath(guide)
+                                            .then(() =>
+                                              setMsg({
+                                                type: 'success',
+                                                text: 'Ruta local copiada al portapapeles.'
+                                              })
+                                            )
+                                            .catch((error) =>
+                                              setMsg({
+                                                type: 'error',
+                                                text:
+                                                  error instanceof Error
+                                                    ? error.message
+                                                    : 'No se pudo copiar la ruta.'
+                                              })
+                                            )
+                                        }
+                                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                      >
+                                        <Copy className="h-3.5 w-3.5" />
+                                        Copiar ruta
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
                                           void showGuideInFolder(guide, true).catch((error) =>
                                             setMsg({
                                               type: 'error',
@@ -2609,6 +3539,20 @@ export default function ShipmentsManager(): React.JSX.Element {
                                       </button>
                                     </>
                                   )}
+                                  {guide.remote_cancelable &&
+                                    guide.shipment_status !== 'cancelled' &&
+                                    guide.shipment_status !== 'delivered' &&
+                                    guide.shipment_status !== 'lost' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => void cancelGuide(guide)}
+                                        disabled={actionLoading}
+                                        className="inline-flex items-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        <XCircle className="h-3.5 w-3.5" />
+                                        Cancelar guia
+                                      </button>
+                                    )}
                                 </div>
                               </div>
                             )

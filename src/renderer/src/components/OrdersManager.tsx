@@ -15,6 +15,7 @@ type Msg = { type: 'error' | 'success' | 'info'; text: string } | null
 
 type DisplayStatus =
   | 'cancelado'
+  | 'cancelado_parcial'
   | 'perdido'
   | 'pendiente_pago'
   | 'preparando_envio'
@@ -22,7 +23,14 @@ type DisplayStatus =
   | 'entregado'
   | 'pagado'
 
-type ShippingStatus = 'pending' | 'preparing' | 'in_transit' | 'delivered' | 'cancelled' | 'lost'
+type ShippingStatus =
+  | 'pending'
+  | 'preparing'
+  | 'in_transit'
+  | 'delivered'
+  | 'partially_cancelled'
+  | 'cancelled'
+  | 'lost'
 
 type OrderSummary = {
   id: string
@@ -158,6 +166,7 @@ function formatDate(value: string): string {
 
 function statusLabel(status: DisplayStatus): string {
   if (status === 'cancelado') return 'Cancelado'
+  if (status === 'cancelado_parcial') return 'Cancelado parcial'
   if (status === 'perdido') return 'Perdido'
   if (status === 'pendiente_pago') return 'Pendiente de pago'
   if (status === 'preparando_envio') return 'Preparando envio'
@@ -168,6 +177,7 @@ function statusLabel(status: DisplayStatus): string {
 
 function statusClass(status: DisplayStatus): string {
   if (status === 'cancelado') return 'bg-rose-500/15 text-rose-200 border-rose-400/35'
+  if (status === 'cancelado_parcial') return 'bg-amber-400/15 text-amber-100 border-amber-300/35'
   if (status === 'perdido') return 'bg-orange-500/15 text-orange-200 border-orange-400/35'
   if (status === 'pendiente_pago') return 'bg-gold/10 text-brand border-brand/30'
   if (status === 'preparando_envio') return 'bg-amber-500/15 text-amber-200 border-amber-400/35'
@@ -498,6 +508,7 @@ export default function OrdersManager(): React.JSX.Element {
             <option value="pagado">Pagado</option>
             <option value="preparando_envio">Preparando envio</option>
             <option value="en_camino">En camino</option>
+            <option value="cancelado_parcial">Cancelado parcial</option>
             <option value="entregado">Entregado</option>
             <option value="cancelado">Cancelado</option>
             <option value="perdido">Perdido</option>
@@ -760,6 +771,7 @@ export default function OrdersManager(): React.JSX.Element {
                       <option value="preparing">Preparando</option>
                       <option value="in_transit">En transito</option>
                       <option value="delivered">Entregado</option>
+                      <option value="partially_cancelled">Cancelado parcial</option>
                       <option value="cancelled">Cancelado</option>
                       <option value="lost">Perdido</option>
                     </select>
