@@ -731,8 +731,8 @@ export default function AssetsManager(): React.JSX.Element {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+      <div className="grid h-[calc(100vh-80px)] gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">Assets R2</p>
@@ -1013,7 +1013,7 @@ export default function AssetsManager(): React.JSX.Element {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">Biblioteca</p>

@@ -447,11 +447,11 @@ export default function OrdersManager(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-4">
+    <div className="flex h-[calc(100vh-80px)] w-full flex-col gap-4 overflow-hidden xl:flex-row">
       {msg && (
         <div
           className={cn(
-            'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm',
+            'flex shrink-0 items-center gap-3 rounded-2xl px-4 py-3 text-sm',
             msg.type === 'error' && 'bg-rose-500/10 text-rose-200',
             msg.type === 'success' && 'bg-emerald-500/10 text-emerald-200',
             msg.type === 'info' && 'bg-sky-500/10 text-sky-200'
@@ -466,7 +466,10 @@ export default function OrdersManager(): React.JSX.Element {
         </div>
       )}
 
-      <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+      {/* MASTER: Columna izquierda (Lista de Órdenes) */}
+      <div className="flex flex-shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] xl:w-1/3 xl:min-w-[400px]">
+        {/* Buscador y Filtros fijos arriba */}
+        <div className="shrink-0 border-b border-white/5 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Pedidos</h2>
@@ -591,9 +594,10 @@ export default function OrdersManager(): React.JSX.Element {
             Limpiar
           </button>
         </div>
-      </section>
-
-      <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+        </div>
+        
+        {/* Lista scrolleable */}
+        <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-zinc-400">Resultados: {loadingOrders ? '...' : orders.length}</p>
           <div className="flex items-center gap-2">
@@ -636,7 +640,14 @@ export default function OrdersManager(): React.JSX.Element {
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (
-              <article key={order.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <article 
+                key={order.id} 
+                onClick={() => void openOrderDetail(order.id)}
+                className={cn(
+                  "cursor-pointer rounded-2xl border p-4 transition-all hover:bg-white/5",
+                  selectedOrderId === order.id ? "border-brand bg-brand/5" : "border-white/10 bg-black/20"
+                )}
+              >
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-semibold">{order.id}</p>
@@ -673,11 +684,12 @@ export default function OrdersManager(): React.JSX.Element {
             ))}
           </div>
         )}
-      </section>
+      </div>
 
-      {selectedOrderId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-3 py-4">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl border border-white/10 bg-surface p-5 sm:p-6">
+      {/* DETAIL: Columna derecha (Detalle de la Orden) */}
+      <div className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02]">
+        {selectedOrderId && activeOrder ? (
+          <div className="custom-scrollbar flex-1 overflow-y-auto p-6">
             <div className="mb-4 flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Detalle de pedido {selectedOrderId}</h3>
               <button type="button" onClick={closeDetail} className="rounded-lg bg-white/10 p-2">
@@ -900,8 +912,21 @@ export default function OrdersManager(): React.JSX.Element {
               </div>
             )}
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <div className="flex h-full items-center justify-center p-6 text-center">
+            <div className="max-w-md space-y-3">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
+                <Search className="h-8 w-8 text-zinc-500" />
+              </div>
+              <h3 className="text-lg font-medium text-zinc-300">Ningun pedido seleccionado</h3>
+              <p className="text-sm text-zinc-500">
+                Haz clic en un pedido de la lista para ver todos sus detalles e informacion de envio aqui.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+      </div>
     </div>
   )
 }

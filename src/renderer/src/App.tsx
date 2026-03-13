@@ -701,10 +701,15 @@ function App(): React.JSX.Element {
       const next = moveListItem(current, fromIndex, toIndex)
       setSelectedImageId((selected) => {
         if (!selected) return selected
-        return next.some((image) => image.id === selected) ? selected : next[0]?.id ?? null
+        return next.some((image) => image.id === selected) ? selected : (next[0]?.id ?? null)
       })
       setCreateImageAlts((currentAlts) =>
-        Object.fromEntries(next.map((image, index) => [image.id, currentAlts[image.id] || defaultImageAlt(form.title, index)]))
+        Object.fromEntries(
+          next.map((image, index) => [
+            image.id,
+            currentAlts[image.id] || defaultImageAlt(form.title, index)
+          ])
+        )
       )
       return next
     })
@@ -723,7 +728,10 @@ function App(): React.JSX.Element {
         const nextAlts = { ...currentAlts }
         delete nextAlts[imageId]
         return Object.fromEntries(
-          next.map((image, index) => [image.id, nextAlts[image.id] || defaultImageAlt(form.title, index)])
+          next.map((image, index) => [
+            image.id,
+            nextAlts[image.id] || defaultImageAlt(form.title, index)
+          ])
         )
       })
       return next
@@ -893,7 +901,8 @@ function App(): React.JSX.Element {
   const submitCreate = async (ev: React.FormEvent): Promise<void> => {
     ev.preventDefault()
     if (!connected) return setMsg({ type: 'error', text: 'R2 y D1 deben estar conectados.' })
-    if (images.length === 0) return setMsg({ type: 'error', text: 'Selecciona al menos una imagen.' })
+    if (images.length === 0)
+      return setMsg({ type: 'error', text: 'Selecciona al menos una imagen.' })
     const slug = slugify(form.slug || form.title)
     const seoSlug = slugify(form.seo_slug || slug)
     const selectedType = normalizeType(form.type)
@@ -1731,14 +1740,14 @@ function App(): React.JSX.Element {
                         ? 'cursor-not-allowed bg-surface200 text-zinc-500'
                         : 'bg-white/10 text-zinc-100 hover:bg-white/15'
                     )}
-                    >
-                      <RefreshCw
-                        className={cn(
-                          'h-4 w-4',
-                          optimizingImageId === selectedImage.id && 'animate-spin'
-                        )}
-                      />
-                      {optimizingImageId === selectedImage.id ? 'Optimizando...' : 'Optimizar tamaño'}
+                  >
+                    <RefreshCw
+                      className={cn(
+                        'h-4 w-4',
+                        optimizingImageId === selectedImage.id && 'animate-spin'
+                      )}
+                    />
+                    {optimizingImageId === selectedImage.id ? 'Optimizando...' : 'Optimizar tamaño'}
                   </button>
 
                   <input
@@ -1752,7 +1761,9 @@ function App(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => {
-                        const currentIndex = images.findIndex((image) => image.id === selectedImage.id)
+                        const currentIndex = images.findIndex(
+                          (image) => image.id === selectedImage.id
+                        )
                         moveCreateImage(currentIndex, currentIndex - 1)
                       }}
                       disabled={images.findIndex((image) => image.id === selectedImage.id) <= 0}
@@ -1764,11 +1775,14 @@ function App(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => {
-                        const currentIndex = images.findIndex((image) => image.id === selectedImage.id)
+                        const currentIndex = images.findIndex(
+                          (image) => image.id === selectedImage.id
+                        )
                         moveCreateImage(currentIndex, currentIndex + 1)
                       }}
                       disabled={
-                        images.findIndex((image) => image.id === selectedImage.id) === images.length - 1
+                        images.findIndex((image) => image.id === selectedImage.id) ===
+                        images.length - 1
                       }
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
                     >
@@ -1797,7 +1811,11 @@ function App(): React.JSX.Element {
                         selectedImageId === img.id ? 'border-brand bg-brand/5' : 'border-white/10'
                       )}
                     >
-                      <button type="button" onClick={() => setSelectedImageId(img.id)} className="w-full">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImageId(img.id)}
+                        className="w-full"
+                      >
                         <img
                           src={img.url}
                           alt={img.name}
@@ -1810,7 +1828,10 @@ function App(): React.JSX.Element {
                       </p>
                       <p className="mt-1 truncate text-xs text-zinc-400">
                         {createImageAlts[img.id] ||
-                          defaultImageAlt(form.title, images.findIndex((image) => image.id === img.id))}
+                          defaultImageAlt(
+                            form.title,
+                            images.findIndex((image) => image.id === img.id)
+                          )}
                       </p>
                     </div>
                   ))}
@@ -1823,459 +1844,496 @@ function App(): React.JSX.Element {
         {view === 'assets' && <AssetsManager />}
 
         {view === 'products' && (
-          <div className="mx-auto w-full max-w-7xl">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-              <h2 className="text-xl font-semibold">
-                Productos ({loadingProducts ? '...' : filteredProducts.length})
-              </h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={productTypeFilter}
-                  onChange={(e) => setProductTypeFilter(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-xs"
-                >
-                  <option value="all">Todos los types</option>
-                  {productTypes.map((type) => (
-                    <option key={type.id} value={type.type}>
-                      {type.type}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => void loadProducts()}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Recargar
-                </button>
+          <div className="flex h-[calc(100vh-80px)] w-full flex-col gap-4 overflow-hidden xl:flex-row">
+            {/* Left Panel: Master View (Products List) */}
+            <div className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02]">
+              <div className="flex-shrink-0 border-b border-white/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xl font-semibold">
+                    Productos ({loadingProducts ? '...' : filteredProducts.length})
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={productTypeFilter}
+                      onChange={(e) => setProductTypeFilter(e.target.value)}
+                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-xs"
+                    >
+                      <option value="all">Todos los types</option>
+                      {productTypes.map((type) => (
+                        <option key={type.id} value={type.type}>
+                          {type.type}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => void loadProducts()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Recargar
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            {loadingProducts ? (
-              <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 text-sm text-zinc-500">
-                Cargando productos...
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredProducts.map((p) => (
-                  <article
-                    key={p.id}
-                    className="rounded-3xl border border-white/5 bg-white/[0.02] p-4"
-                  >
-                    {editingId === p.id ? (
-                      <div className="space-y-2">
-                        <input
-                          value={edit.title}
-                          onChange={(e) => setEdit((c) => ({ ...c, title: e.target.value }))}
-                          placeholder="title"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.slug}
-                          onChange={(e) => setEdit((c) => ({ ...c, slug: e.target.value }))}
-                          placeholder="slug"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.seo_slug}
-                          onChange={(e) => setEdit((c) => ({ ...c, seo_slug: e.target.value }))}
-                          placeholder="seo_slug"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <select
-                          value={edit.type}
-                          onChange={(e) => setEdit((c) => ({ ...c, type: e.target.value }))}
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        >
-                          {productTypes.map((type) => (
-                            <option key={type.id} value={type.type}>
-                              {type.type}
-                            </option>
-                          ))}
-                          {!productTypes.some((type) => type.type === edit.type) && (
-                            <option value={edit.type}>{edit.type || 'sin-type'}</option>
-                          )}
-                        </select>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={edit.price_cents}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, price_cents: e.target.value }))
-                            }
-                            placeholder="price_cents"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.stock}
-                            onChange={(e) => setEdit((c) => ({ ...c, stock: e.target.value }))}
-                            placeholder="stock"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                                Galeria
-                              </p>
-                              <p className="mt-1 text-xs text-zinc-400">
-                                Hasta 3 imagenes. La primera sera la portada principal.
+
+              <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+                {loadingProducts ? (
+                  <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 text-sm text-zinc-500">
+                    Cargando productos...
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredProducts.map((p) => (
+                      <article
+                        key={p.id}
+                        className={cn(
+                          'rounded-3xl border p-4 transition',
+                          editingId === p.id
+                            ? 'border-brand bg-brand/5'
+                            : 'border-white/5 bg-white/[0.02]'
+                        )}
+                      >
+                        <div className="space-y-2">
+                          <h3 className="text-lg font-semibold">{p.title}</h3>
+                          <p className="text-xs text-zinc-500">/{p.slug}</p>
+                          <p className="text-xs text-zinc-500">seo_slug: {p.seo_slug || 'N/A'}</p>
+                          <p className="text-xs text-zinc-500">
+                            canonical: {p.canonical_path || 'N/A'}
+                          </p>
+                          <p className="text-xs text-zinc-500">Type: {p.type}</p>
+                          <p className="text-xs text-zinc-500">
+                            SKU: {p.sku || 'N/A'} | Marca: {p.brand || 'N/A'}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            Precio: ${fmtMoney(p.price_cents)} | Stock: {p.stock}
+                          </p>
+                          {Array.isArray(p.images) && p.images.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={p.images[0].url}
+                                alt={p.images[0].alt || p.title}
+                                className="h-14 w-14 rounded-lg object-cover"
+                                onError={(e) => err(`product preview ${p.id}`, e)}
+                              />
+                              <p className="text-xs text-zinc-500">
+                                {p.images.length} imagen{p.images.length === 1 ? '' : 'es'}
                               </p>
                             </div>
+                          )}
+                          <p className="text-xs text-zinc-500">
+                            featured: {boolFromFlag(p.is_featured) ? '1' : '0'} | bestseller:{' '}
+                            {boolFromFlag(p.is_bestseller) ? '1' : '0'} | new:{' '}
+                            {boolFromFlag(p.is_new_arrival) ? '1' : '0'} | active:{' '}
+                            {boolFromFlag(p.is_active, true) ? '1' : '0'}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            envio: {p.shipping_time_min_days ?? 'N/A'}-
+                            {p.shipping_time_max_days ?? 'N/A'} dias | devolucion:{' '}
+                            {p.return_window_days ?? 'N/A'} dias
+                          </p>
+                          <p className="truncate text-xs text-zinc-500">
+                            image_key: {p.image_key || 'N/A'}
+                          </p>
+                          <div className="flex gap-2">
                             <button
-                              type="button"
-                              onClick={addEmptyEditImage}
-                              disabled={editImages.length >= 3}
+                              onClick={() => startEdit(p)}
                               className={cn(
-                                'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
-                                editImages.length >= 3
-                                  ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                                  : 'bg-white/10 text-zinc-100 hover:bg-white/15'
+                                'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
+                                editingId === p.id
+                                  ? 'bg-brand text-black'
+                                  : 'bg-white/5 text-zinc-100 hover:bg-white/10'
                               )}
                             >
-                              <ImagePlus className="h-4 w-4" />
-                              Agregar imagen
+                              <Pencil className="h-4 w-4" />
+                              {editingId === p.id ? 'Editando...' : 'Editar'}
+                            </button>
+                            <button
+                              onClick={() => void deleteProduct(p.id, p.title)}
+                              disabled={editingId === p.id}
+                              className={cn(
+                                'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
+                                editingId === p.id
+                                  ? 'cursor-not-allowed bg-surface200 text-zinc-500'
+                                  : 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/20'
+                              )}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Eliminar
                             </button>
                           </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
 
-                          <div className="mt-3 space-y-3">
-                            {editImages.length === 0 ? (
-                              <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-zinc-500">
-                                Este producto aun no tiene imagenes.
-                              </div>
-                            ) : (
-                              editImages.map((image, index) => (
-                                <div
-                                  key={image.id}
-                                  className="grid gap-3 rounded-xl border border-white/10 bg-surface100/70 p-3"
-                                >
-                                  <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)]">
-                                    <img
-                                      src={getEditImagePreviewUrl(image)}
-                                      alt={image.alt_text || `Imagen ${index + 1}`}
-                                      className="aspect-square w-full rounded-lg object-cover"
-                                      onError={(e) => err(`edit image preview ${image.id}`, e)}
+            {/* Right Panel: Detail View (Edit Form) */}
+            <div className="flex flex-shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] xl:w-[45%] xl:min-w-[450px]">
+              {editingId ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-white/5 p-4">
+                    <h2 className="text-xl font-semibold">Editar Producto</h2>
+                    <button
+                      type="button"
+                      onClick={cancelEditProduct}
+                      className="inline-flex items-center justify-center rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
+                    >
+                      <XCircle className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+                    <div className="space-y-3">
+                      <input
+                        value={edit.title}
+                        onChange={(e) => setEdit((c) => ({ ...c, title: e.target.value }))}
+                        placeholder="title"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={edit.slug}
+                        onChange={(e) => setEdit((c) => ({ ...c, slug: e.target.value }))}
+                        placeholder="slug"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={edit.seo_slug}
+                        onChange={(e) => setEdit((c) => ({ ...c, seo_slug: e.target.value }))}
+                        placeholder="seo_slug"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <select
+                        value={edit.type}
+                        onChange={(e) => setEdit((c) => ({ ...c, type: e.target.value }))}
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      >
+                        {productTypes.map((type) => (
+                          <option key={type.id} value={type.type}>
+                            {type.type}
+                          </option>
+                        ))}
+                        {!productTypes.some((type) => type.type === edit.type) && (
+                          <option value={edit.type}>{edit.type || 'sin-type'}</option>
+                        )}
+                      </select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={edit.price_cents}
+                          onChange={(e) => setEdit((c) => ({ ...c, price_cents: e.target.value }))}
+                          placeholder="price_cents"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.stock}
+                          onChange={(e) => setEdit((c) => ({ ...c, stock: e.target.value }))}
+                          placeholder="stock"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              Galeria
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-400">
+                              Hasta 3 imagenes. La primera sera la portada principal.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={addEmptyEditImage}
+                            disabled={editImages.length >= 3}
+                            className={cn(
+                              'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
+                              editImages.length >= 3
+                                ? 'cursor-not-allowed bg-surface200 text-zinc-500'
+                                : 'bg-white/10 text-zinc-100 hover:bg-white/15'
+                            )}
+                          >
+                            <ImagePlus className="h-4 w-4" />
+                            Agregar imagen
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-3">
+                          {editImages.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-zinc-500">
+                              Este producto aun no tiene imagenes.
+                            </div>
+                          ) : (
+                            editImages.map((image, index) => (
+                              <div
+                                key={image.id}
+                                className="grid gap-3 rounded-xl border border-white/10 bg-surface100/70 p-3"
+                              >
+                                <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)]">
+                                  <img
+                                    src={getEditImagePreviewUrl(image)}
+                                    alt={image.alt_text || `Imagen ${index + 1}`}
+                                    className="aspect-square w-full rounded-lg object-cover"
+                                    onError={(e) => err(`edit image preview ${image.id}`, e)}
+                                  />
+                                  <div className="space-y-2">
+                                    <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                                      Slot {index + 1}
+                                    </p>
+                                    <input
+                                      value={image.image_key}
+                                      onChange={(e) =>
+                                        updateEditImage(image.id, { image_key: e.target.value })
+                                      }
+                                      placeholder="image_key"
+                                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
                                     />
-                                    <div className="space-y-2">
-                                      <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
-                                        Slot {index + 1}
-                                      </p>
-                                      <input
-                                        value={image.image_key}
-                                        onChange={(e) =>
-                                          updateEditImage(image.id, { image_key: e.target.value })
-                                        }
-                                        placeholder="image_key"
-                                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
-                                      />
-                                      <input
-                                        value={image.alt_text}
-                                        onChange={(e) =>
-                                          updateEditImage(image.id, { alt_text: e.target.value })
-                                        }
-                                        placeholder="Texto alternativo"
-                                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
-                                      />
-                                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                        <button
-                                          type="button"
-                                          onClick={() => triggerEditFilePicker(image.id)}
-                                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
-                                        >
-                                          <UploadCloud className="h-4 w-4" />
-                                          Reemplazar
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => moveEditImage(index, index - 1)}
-                                          disabled={index === 0}
-                                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                                        >
-                                          <ChevronLeft className="h-4 w-4" />
-                                          Antes
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => moveEditImage(index, index + 1)}
-                                          disabled={index === editImages.length - 1}
-                                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                                        >
-                                          Despues
-                                          <ChevronRight className="h-4 w-4" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => removeEditImage(image.id)}
-                                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                          Quitar
-                                        </button>
-                                      </div>
+                                    <input
+                                      value={image.alt_text}
+                                      onChange={(e) =>
+                                        updateEditImage(image.id, { alt_text: e.target.value })
+                                      }
+                                      placeholder="Texto alternativo"
+                                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+                                    />
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                      <button
+                                        type="button"
+                                        onClick={() => triggerEditFilePicker(image.id)}
+                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
+                                      >
+                                        <UploadCloud className="h-4 w-4" />
+                                        Reemplazar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveEditImage(index, index - 1)}
+                                        disabled={index === 0}
+                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                                      >
+                                        <ChevronLeft className="h-4 w-4" />
+                                        Antes
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveEditImage(index, index + 1)}
+                                        disabled={index === editImages.length - 1}
+                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                                      >
+                                        Despues
+                                        <ChevronRight className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeEditImage(image.id)}
+                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Quitar
+                                      </button>
                                     </div>
                                   </div>
                                 </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                        <input
-                          value={edit.sku}
-                          onChange={(e) => setEdit((c) => ({ ...c, sku: e.target.value }))}
-                          placeholder="sku"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.brand}
-                          onChange={(e) => setEdit((c) => ({ ...c, brand: e.target.value }))}
-                          placeholder="brand"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <textarea
-                          value={edit.short_desc}
-                          rows={2}
-                          onChange={(e) => setEdit((c) => ({ ...c, short_desc: e.target.value }))}
-                          placeholder="short_desc"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <textarea
-                          value={edit.description}
-                          rows={3}
-                          onChange={(e) => setEdit((c) => ({ ...c, description: e.target.value }))}
-                          placeholder="description"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={edit.material}
-                            onChange={(e) => setEdit((c) => ({ ...c, material: e.target.value }))}
-                            placeholder="material"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.base_metal}
-                            onChange={(e) => setEdit((c) => ({ ...c, base_metal: e.target.value }))}
-                            placeholder="base_metal"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.finish_text}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, finish_text: e.target.value }))
-                            }
-                            placeholder="finish_text"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.main_color}
-                            onChange={(e) => setEdit((c) => ({ ...c, main_color: e.target.value }))}
-                            placeholder="main_color"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <textarea
-                          value={edit.care_instructions}
-                          rows={2}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, care_instructions: e.target.value }))
-                          }
-                          placeholder="care_instructions"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <textarea
-                          value={edit.package_includes}
-                          rows={2}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, package_includes: e.target.value }))
-                          }
-                          placeholder="package_includes"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={edit.shipping_time_min_days}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, shipping_time_min_days: e.target.value }))
-                            }
-                            placeholder="shipping_time_min_days"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.shipping_time_max_days}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, shipping_time_max_days: e.target.value }))
-                            }
-                            placeholder="shipping_time_max_days"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.return_window_days}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, return_window_days: e.target.value }))
-                            }
-                            placeholder="return_window_days"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                          <input
-                            value={edit.sort}
-                            onChange={(e) => setEdit((c) => ({ ...c, sort: e.target.value }))}
-                            placeholder="sort"
-                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <input
-                          value={edit.currency}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
-                          }
-                          placeholder="currency"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <div className="grid gap-2 md:grid-cols-2">
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.hypoallergenic}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, hypoallergenic: e.target.checked }))
-                              }
-                            />
-                            hypoallergenic
-                          </label>
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.gift_ready}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, gift_ready: e.target.checked }))
-                              }
-                            />
-                            gift_ready
-                          </label>
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.is_featured}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, is_featured: e.target.checked }))
-                              }
-                            />
-                            is_featured
-                          </label>
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.is_bestseller}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, is_bestseller: e.target.checked }))
-                              }
-                            />
-                            is_bestseller
-                          </label>
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.is_new_arrival}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, is_new_arrival: e.target.checked }))
-                              }
-                            />
-                            is_new_arrival
-                          </label>
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={edit.is_active}
-                              onChange={(e) =>
-                                setEdit((c) => ({ ...c, is_active: e.target.checked }))
-                              }
-                            />
-                            is_active
-                          </label>
-                        </div>
-                        <p className="text-xs text-zinc-500">
-                          Canonica preview: /producto/{slugify(edit.seo_slug || edit.slug)}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => void saveEdit()}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-black"
-                          >
-                            <Save className="h-4 w-4" />
-                            Guardar
-                          </button>
-                          <button
-                            onClick={cancelEditProduct}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Cancelar
-                          </button>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-semibold">{p.title}</h3>
-                        <p className="text-xs text-zinc-500">/{p.slug}</p>
-                        <p className="text-xs text-zinc-500">seo_slug: {p.seo_slug || 'N/A'}</p>
-                        <p className="text-xs text-zinc-500">
-                          canonical: {p.canonical_path || 'N/A'}
-                        </p>
-                        <p className="text-xs text-zinc-500">Type: {p.type}</p>
-                        <p className="text-xs text-zinc-500">
-                          SKU: {p.sku || 'N/A'} | Marca: {p.brand || 'N/A'}
-                        </p>
-                        <p className="text-xs text-zinc-500">
-                          Precio: ${fmtMoney(p.price_cents)} | Stock: {p.stock}
-                        </p>
-                        {Array.isArray(p.images) && p.images.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={p.images[0].url}
-                              alt={p.images[0].alt || p.title}
-                              className="h-14 w-14 rounded-lg object-cover"
-                              onError={(e) => err(`product preview ${p.id}`, e)}
-                            />
-                            <p className="text-xs text-zinc-500">
-                              {p.images.length} imagen{p.images.length === 1 ? '' : 'es'}
-                            </p>
-                          </div>
-                        )}
-                        <p className="text-xs text-zinc-500">
-                          featured: {boolFromFlag(p.is_featured) ? '1' : '0'} | bestseller:{' '}
-                          {boolFromFlag(p.is_bestseller) ? '1' : '0'} | new:{' '}
-                          {boolFromFlag(p.is_new_arrival) ? '1' : '0'} | active:{' '}
-                          {boolFromFlag(p.is_active, true) ? '1' : '0'}
-                        </p>
-                        <p className="text-xs text-zinc-500">
-                          envio: {p.shipping_time_min_days ?? 'N/A'}-
-                          {p.shipping_time_max_days ?? 'N/A'} dias | devolucion:{' '}
-                          {p.return_window_days ?? 'N/A'} dias
-                        </p>
-                        <p className="truncate text-xs text-zinc-500">
-                          image_key: {p.image_key || 'N/A'}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => startEdit(p)}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => void deleteProduct(p.id, p.title)}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-200"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Eliminar
-                          </button>
-                        </div>
+                      <input
+                        value={edit.sku}
+                        onChange={(e) => setEdit((c) => ({ ...c, sku: e.target.value }))}
+                        placeholder="sku"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={edit.brand}
+                        onChange={(e) => setEdit((c) => ({ ...c, brand: e.target.value }))}
+                        placeholder="brand"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <textarea
+                        value={edit.short_desc}
+                        rows={2}
+                        onChange={(e) => setEdit((c) => ({ ...c, short_desc: e.target.value }))}
+                        placeholder="short_desc"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <textarea
+                        value={edit.description}
+                        rows={3}
+                        onChange={(e) => setEdit((c) => ({ ...c, description: e.target.value }))}
+                        placeholder="description"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={edit.material}
+                          onChange={(e) => setEdit((c) => ({ ...c, material: e.target.value }))}
+                          placeholder="material"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.base_metal}
+                          onChange={(e) => setEdit((c) => ({ ...c, base_metal: e.target.value }))}
+                          placeholder="base_metal"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.finish_text}
+                          onChange={(e) => setEdit((c) => ({ ...c, finish_text: e.target.value }))}
+                          placeholder="finish_text"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.main_color}
+                          onChange={(e) => setEdit((c) => ({ ...c, main_color: e.target.value }))}
+                          placeholder="main_color"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
                       </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
+                      <textarea
+                        value={edit.care_instructions}
+                        rows={2}
+                        onChange={(e) =>
+                          setEdit((c) => ({ ...c, care_instructions: e.target.value }))
+                        }
+                        placeholder="care_instructions"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <textarea
+                        value={edit.package_includes}
+                        rows={2}
+                        onChange={(e) =>
+                          setEdit((c) => ({ ...c, package_includes: e.target.value }))
+                        }
+                        placeholder="package_includes"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={edit.shipping_time_min_days}
+                          onChange={(e) =>
+                            setEdit((c) => ({ ...c, shipping_time_min_days: e.target.value }))
+                          }
+                          placeholder="shipping_time_min_days"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.shipping_time_max_days}
+                          onChange={(e) =>
+                            setEdit((c) => ({ ...c, shipping_time_max_days: e.target.value }))
+                          }
+                          placeholder="shipping_time_max_days"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.return_window_days}
+                          onChange={(e) =>
+                            setEdit((c) => ({ ...c, return_window_days: e.target.value }))
+                          }
+                          placeholder="return_window_days"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={edit.sort}
+                          onChange={(e) => setEdit((c) => ({ ...c, sort: e.target.value }))}
+                          placeholder="sort"
+                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <input
+                        value={edit.currency}
+                        onChange={(e) =>
+                          setEdit((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
+                        }
+                        placeholder="currency"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.hypoallergenic}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, hypoallergenic: e.target.checked }))
+                            }
+                          />
+                          hypoallergenic
+                        </label>
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.gift_ready}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, gift_ready: e.target.checked }))
+                            }
+                          />
+                          gift_ready
+                        </label>
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.is_featured}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, is_featured: e.target.checked }))
+                            }
+                          />
+                          is_featured
+                        </label>
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.is_bestseller}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, is_bestseller: e.target.checked }))
+                            }
+                          />
+                          is_bestseller
+                        </label>
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.is_new_arrival}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, is_new_arrival: e.target.checked }))
+                            }
+                          />
+                          is_new_arrival
+                        </label>
+                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={edit.is_active}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, is_active: e.target.checked }))
+                            }
+                          />
+                          is_active
+                        </label>
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Canonica preview: /producto/{slugify(edit.seo_slug || edit.slug)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-shrink-0 gap-2 border-t border-white/5 p-4">
+                    <button
+                      onClick={() => void saveEdit()}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-black hover:bg-brand/90"
+                    >
+                      <Save className="h-4 w-4" />
+                      Guardar cambios
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-zinc-500">
+                  <div className="mb-4 rounded-full bg-white/5 p-4">
+                    <PackagePlus className="h-8 w-8 text-zinc-400" />
+                  </div>
+                  <p className="text-sm">Selecciona un producto de la lista</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -2360,9 +2418,7 @@ function App(): React.JSX.Element {
                   </p>
                   <p>
                     Geocodes:{' '}
-                    <span
-                      className={conn.envia.geocodes.ok ? 'text-emerald-300' : 'text-rose-300'}
-                    >
+                    <span className={conn.envia.geocodes.ok ? 'text-emerald-300' : 'text-rose-300'}>
                       {conn.envia.geocodes.ok ? 'ok' : conn.envia.geocodes.error || 'error'}
                     </span>
                   </p>
