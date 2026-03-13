@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
@@ -681,6 +681,43 @@ function readPositiveInteger(value: unknown, fallback: number | null = null): nu
   return parsed
 }
 
+function validateShipmentBoxTypeForm(form: ShipmentBoxTypeForm): string[] {
+  const errors: string[] = []
+
+  if (!form.name.trim()) {
+    errors.push('El nombre es obligatorio.')
+  }
+
+  const sizeRules: Array<{ label: string; value: string }> = [
+    { label: 'Largo', value: form.inner_length_cm },
+    { label: 'Ancho', value: form.inner_width_cm },
+    { label: 'Alto', value: form.inner_height_cm }
+  ]
+  for (const rule of sizeRules) {
+    const parsed = Number(rule.value)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      errors.push(`${rule.label} debe ser mayor a cero.`)
+    }
+  }
+
+  const maxProducts = Number(form.max_products)
+  if (!Number.isInteger(maxProducts) || maxProducts < 1) {
+    errors.push('Max. productos debe ser un entero mayor o igual a 1.')
+  }
+
+  const stockQty = Number(form.stock_qty)
+  if (!Number.isInteger(stockQty) || stockQty < 0) {
+    errors.push('Stock debe ser un entero mayor o igual a 0.')
+  }
+
+  const sort = Number(form.sort)
+  if (!Number.isInteger(sort)) {
+    errors.push('Orden debe ser un entero.')
+  }
+
+  return errors
+}
+
 function getStoredBoxPlanBoxes(order: ShipmentOrder | null): {
   boxTypeId: string
   productsPerBox: string
@@ -1046,16 +1083,13 @@ export default function ShipmentsManager(): React.JSX.Element {
       .map((quote) => quote.service)
     return [...new Set([...availableServices, ...quotedServices].filter(Boolean))].sort()
   }, [availableServices, manualQuoteState.quotes, manualParcelForm.carrier])
-  const activeBoxTypes = useMemo(
-    () => boxTypes.filter((boxType) => boxType.is_active),
-    [boxTypes]
-  )
+  const activeBoxTypes = useMemo(() => boxTypes.filter((boxType) => boxType.is_active), [boxTypes])
   const requiredBoxCount = selectedBoxType ? Math.max(boxPlanBoxes.length, 1) : 0
   const selectedBoxTypeLowStock = Boolean(
     selectedBoxType && requiredBoxCount > 0 && selectedBoxType.stock_qty < requiredBoxCount
   )
 
-  const resetDebugRequest = (): void => {
+  const resetDebugRequest = useCallback((): void => {
     setShowDebugRequest(false)
     setDebugRequestPayload('')
     setDebugRequestWarning(null)
@@ -1063,9 +1097,9 @@ export default function ShipmentsManager(): React.JSX.Element {
     setDebugRequestShipmentType(null)
     setDebugRequestGuideCount(null)
     setDebugRequestMissingFields([])
-  }
+  }, [])
 
-  const resetSelectedShipmentState = (): void => {
+  const resetSelectedShipmentState = useCallback((): void => {
     setSelectedOrder(null)
     setAutoParcelForm(EMPTY_PARCEL_FORM)
     setManualParcelForm(EMPTY_PARCEL_FORM)
@@ -1082,48 +1116,51 @@ export default function ShipmentsManager(): React.JSX.Element {
     setLabelPreviewTitle(null)
     setActiveQuoteMode('auto')
     resetDebugRequest()
-  }
+  }, [resetDebugRequest])
 
-  const applyOrderQuoteState = (
-    order: ShipmentOrder,
-    fallbackQuotes: QuoteOption[] = [],
-    fallbackSelected: QuoteOption | null = null
-  ): void => {
-    const snapshot = parseQuoteSnapshot(order)
-    const nextAutoState = { ...EMPTY_QUOTE_STATE }
-    const nextManualState = { ...EMPTY_QUOTE_STATE }
-    const nextQuotes = snapshot?.quotes?.length ? snapshot.quotes : fallbackQuotes
-    const nextSelected = snapshot?.selected_quote || fallbackSelected
-    const nextBoxPlan = getStoredBoxPlanBoxes(order)
+  const applyOrderQuoteState = useCallback(
+    (
+      order: ShipmentOrder,
+      fallbackQuotes: QuoteOption[] = [],
+      fallbackSelected: QuoteOption | null = null
+    ): void => {
+      const snapshot = parseQuoteSnapshot(order)
+      const nextAutoState = { ...EMPTY_QUOTE_STATE }
+      const nextManualState = { ...EMPTY_QUOTE_STATE }
+      const nextQuotes = snapshot?.quotes?.length ? snapshot.quotes : fallbackQuotes
+      const nextSelected = snapshot?.selected_quote || fallbackSelected
+      const nextBoxPlan = getStoredBoxPlanBoxes(order)
 
-    if (snapshot) {
-      const stateFromSnapshot: QuoteState = {
-        quotes: nextQuotes,
-        selectedQuote: nextSelected,
-        requestKey: buildQuoteRequestKeyFromSnapshot(snapshot),
-        invalidated: false
+      if (snapshot) {
+        const stateFromSnapshot: QuoteState = {
+          quotes: nextQuotes,
+          selectedQuote: nextSelected,
+          requestKey: buildQuoteRequestKeyFromSnapshot(snapshot),
+          invalidated: false
+        }
+        if (snapshot.mode === 'manual') {
+          Object.assign(nextManualState, stateFromSnapshot)
+        } else {
+          Object.assign(nextAutoState, stateFromSnapshot)
+        }
       }
-      if (snapshot.mode === 'manual') {
-        Object.assign(nextManualState, stateFromSnapshot)
-      } else {
-        Object.assign(nextAutoState, stateFromSnapshot)
-      }
-    }
 
-    setSelectedOrder(order)
-    setAutoParcelForm(parcelFormFromOrder(order, snapshot, 'auto'))
-    setManualParcelForm(parcelFormFromOrder(order, snapshot, 'manual'))
-    setSelectedBoxTypeId(nextBoxPlan.boxTypeId)
-    setBoxPlanProductsPerBox(nextBoxPlan.productsPerBox)
-    setBoxPlanBoxes(nextBoxPlan.boxes)
-    setLocalLabelFiles({})
-    setLabelPreviewUrl(null)
-    setLabelPreviewTitle(null)
-    setAutoQuoteState(nextAutoState)
-    setManualQuoteState(nextManualState)
-    setActiveQuoteMode(snapshot?.mode || 'auto')
-    resetDebugRequest()
-  }
+      setSelectedOrder(order)
+      setAutoParcelForm(parcelFormFromOrder(order, snapshot, 'auto'))
+      setManualParcelForm(parcelFormFromOrder(order, snapshot, 'manual'))
+      setSelectedBoxTypeId(nextBoxPlan.boxTypeId)
+      setBoxPlanProductsPerBox(nextBoxPlan.productsPerBox)
+      setBoxPlanBoxes(nextBoxPlan.boxes)
+      setLocalLabelFiles({})
+      setLabelPreviewUrl(null)
+      setLabelPreviewTitle(null)
+      setAutoQuoteState(nextAutoState)
+      setManualQuoteState(nextManualState)
+      setActiveQuoteMode(snapshot?.mode || 'auto')
+      resetDebugRequest()
+    },
+    [resetDebugRequest]
+  )
 
   const clearQuoteSelection = (mode: QuoteMode, markInvalidated = false): void => {
     resetDebugRequest()
@@ -1324,35 +1361,44 @@ export default function ShipmentsManager(): React.JSX.Element {
     await copyTextToClipboard(file.path)
   }
 
-  const resetBoxTypeEditor = (): void => {
+  const resetBoxTypeEditor = useCallback((): void => {
     setEditingBoxTypeId(null)
     setBoxTypeForm(EMPTY_BOX_TYPE_FORM)
-  }
+  }, [])
 
-  const loadShipmentBoxTypes = async (token = adminToken): Promise<void> => {
-    if (!normalizeAdminToken(token)) {
-      setBoxTypes([])
-      resetBoxTypeEditor()
-      return
-    }
-
-    setBoxTypesLoading(true)
-    try {
-      const response = await requestJson<ShipmentBoxTypesResponse>('/api/shipment-box-types', {
-        headers: buildAuthHeaders(token)
-      })
-      if (!response.success) {
-        throw new Error(response.error || 'No se pudieron cargar los tipos de caja.')
+  const loadShipmentBoxTypes = useCallback(
+    async (token = adminToken): Promise<void> => {
+      if (!normalizeAdminToken(token)) {
+        setBoxTypes([])
+        resetBoxTypeEditor()
+        return
       }
-      setBoxTypes(response.box_types || [])
-    } finally {
-      setBoxTypesLoading(false)
-    }
-  }
+
+      setBoxTypesLoading(true)
+      try {
+        const response = await requestJson<ShipmentBoxTypesResponse>('/api/shipment-box-types', {
+          headers: buildAuthHeaders(token)
+        })
+        if (!response.success) {
+          throw new Error(response.error || 'No se pudieron cargar los tipos de caja.')
+        }
+        setBoxTypes(response.box_types || [])
+      } finally {
+        setBoxTypesLoading(false)
+      }
+    },
+    [adminToken, resetBoxTypeEditor]
+  )
 
   const saveShipmentBoxType = async (): Promise<void> => {
     if (!normalizeAdminToken(adminToken)) {
       setMsg({ type: 'error', text: 'Ingresa el Bearer admin antes de guardar cajas.' })
+      return
+    }
+
+    const validationErrors = validateShipmentBoxTypeForm(boxTypeForm)
+    if (validationErrors.length > 0) {
+      setMsg({ type: 'error', text: `Corrige la caja: ${validationErrors.join(' ')}` })
       return
     }
 
@@ -1478,7 +1524,12 @@ export default function ShipmentsManager(): React.JSX.Element {
     const unitsTotal = readPositiveInteger(selectedOrder.summary.units_total, 1) || 1
     if (boxType.max_products < unitsTotal) {
       setBoxPlanBoxes(
-        generateBoxPlanBoxes(boxType.max_products, unitsTotal, template, selectedOrder.total_amount_cents)
+        generateBoxPlanBoxes(
+          boxType.max_products,
+          unitsTotal,
+          template,
+          selectedOrder.total_amount_cents
+        )
       )
     } else {
       setBoxPlanBoxes([])
@@ -1487,136 +1538,163 @@ export default function ShipmentsManager(): React.JSX.Element {
     invalidateAllQuoteSelections()
   }
 
-  const loadEnviaOptions = async (
-    token = adminToken,
-    carrier = manualParcelForm.carrier.trim()
-  ): Promise<void> => {
-    const requestId = ++optionsRequestIdRef.current
-    const targetOrderId = selectedOrderIdRef.current
-    const requestedCarrier = carrier.trim()
-    if (!normalizeAdminToken(token)) {
-      setAvailableCarriers([])
-      setAvailableServices([])
-      return
-    }
-
-    const params = new URLSearchParams({ country: 'MX' })
-    if (carrier) params.set('carrier', carrier)
-    const response = await requestJson<ShipmentOptionsResponse>(
-      `/api/shipments/options?${params.toString()}`,
-      {
-        headers: buildAuthHeaders(token)
+  const loadEnviaOptions = useCallback(
+    async (token = adminToken, carrier = manualParcelForm.carrier.trim()): Promise<void> => {
+      const requestId = ++optionsRequestIdRef.current
+      const targetOrderId = selectedOrderIdRef.current
+      const requestedCarrier = carrier.trim()
+      if (!normalizeAdminToken(token)) {
+        setAvailableCarriers([])
+        setAvailableServices([])
+        return
       }
-    )
 
-    if (!response.success) {
-      throw new Error(response.error || 'No se pudieron cargar opciones de Envia.')
-    }
-
-    if (
-      optionsRequestIdRef.current !== requestId ||
-      selectedOrderIdRef.current !== targetOrderId ||
-      manualCarrierRef.current !== requestedCarrier
-    ) {
-      return
-    }
-
-    setAvailableCarriers(response.carriers || [])
-    setAvailableServices(requestedCarrier ? response.services || [] : [])
-  }
-
-  const loadPending = async (token = adminToken): Promise<void> => {
-    if (!normalizeAdminToken(token)) {
-      setPending([])
-      return
-    }
-
-    setPendingLoading(true)
-    try {
-      const response = await requestJson<ShipmentListResponse>('/api/shipments/pending', {
-        headers: buildAuthHeaders(token)
-      })
-      if (!response.success) throw new Error(response.error || 'No se pudo cargar pendientes.')
-      setPending(response.shipments || [])
-    } finally {
-      setPendingLoading(false)
-    }
-  }
-
-  const loadApproved = async (token = adminToken, filter = statusFilter): Promise<void> => {
-    if (!normalizeAdminToken(token)) {
-      setApproved([])
-      return
-    }
-
-    setApprovedLoading(true)
-    try {
-      const params = new URLSearchParams()
-      if (filter) params.set('status', filter)
-      const suffix = params.toString()
-      const response = await requestJson<ShipmentListResponse>(
-        `/api/shipments${suffix ? `?${suffix}` : ''}`,
+      const params = new URLSearchParams({ country: 'MX' })
+      if (carrier) params.set('carrier', carrier)
+      const response = await requestJson<ShipmentOptionsResponse>(
+        `/api/shipments/options?${params.toString()}`,
         {
           headers: buildAuthHeaders(token)
         }
       )
-      if (!response.success) throw new Error(response.error || 'No se pudo cargar envios.')
-      setApproved(response.shipments || [])
-    } finally {
-      setApprovedLoading(false)
-    }
-  }
 
-  const loadDetail = async (orderId: string, token = adminToken): Promise<void> => {
-    const requestId = ++detailRequestIdRef.current
-    if (!normalizeAdminToken(token)) return
-    setDetailLoading(true)
-    try {
-      const response = await requestJson<ShipmentDetailResponse>(`/api/shipments/${orderId}`, {
-        headers: buildAuthHeaders(token)
-      })
-      if (!response.success || !response.order) {
-        throw new Error(response.error || 'No se pudo cargar el detalle del envio.')
+      if (!response.success) {
+        throw new Error(response.error || 'No se pudieron cargar opciones de Envia.')
       }
+
       if (
-        detailRequestIdRef.current !== requestId ||
-        selectedOrderIdRef.current !== orderId ||
-        response.order.id !== orderId
+        optionsRequestIdRef.current !== requestId ||
+        selectedOrderIdRef.current !== targetOrderId ||
+        manualCarrierRef.current !== requestedCarrier
       ) {
         return
       }
-      applyOrderQuoteState(response.order)
-      setAvailableCarriers([])
-      setAvailableServices([])
-      setRejectReason(response.order.shipment?.rejected_reason || '')
-      if (response.order.shipment?.approval_status === 'approved') {
-        void remoteRefreshShipment(orderId, token, true)
-      }
-    } finally {
-      if (detailRequestIdRef.current === requestId) {
-        setDetailLoading(false)
-      }
-    }
-  }
 
-  const refreshLists = async (token = adminToken): Promise<void> => {
-    if (!normalizeAdminToken(token)) {
-      setMsg({ type: 'info', text: 'Ingresa el Bearer admin para gestionar envios.' })
-      setPending([])
-      setApproved([])
-      return
-    }
+      setAvailableCarriers(response.carriers || [])
+      setAvailableServices(requestedCarrier ? response.services || [] : [])
+    },
+    [adminToken, manualParcelForm.carrier]
+  )
 
-    setMsg(null)
-    try {
-      await Promise.all([loadPending(token), loadApproved(token, statusFilter)])
-    } catch (error) {
-      setMsg({
-        type: 'error',
-        text: error instanceof Error ? error.message : 'No se pudieron cargar los envios.'
-      })
-    }
-  }
+  const loadPending = useCallback(
+    async (token = adminToken): Promise<void> => {
+      if (!normalizeAdminToken(token)) {
+        setPending([])
+        return
+      }
+
+      setPendingLoading(true)
+      try {
+        const response = await requestJson<ShipmentListResponse>('/api/shipments/pending', {
+          headers: buildAuthHeaders(token)
+        })
+        if (!response.success) throw new Error(response.error || 'No se pudo cargar pendientes.')
+        setPending(response.shipments || [])
+      } finally {
+        setPendingLoading(false)
+      }
+    },
+    [adminToken]
+  )
+
+  const loadApproved = useCallback(
+    async (token = adminToken, filter = statusFilter): Promise<void> => {
+      if (!normalizeAdminToken(token)) {
+        setApproved([])
+        return
+      }
+
+      setApprovedLoading(true)
+      try {
+        const params = new URLSearchParams()
+        if (filter) params.set('status', filter)
+        const suffix = params.toString()
+        const response = await requestJson<ShipmentListResponse>(
+          `/api/shipments${suffix ? `?${suffix}` : ''}`,
+          {
+            headers: buildAuthHeaders(token)
+          }
+        )
+        if (!response.success) throw new Error(response.error || 'No se pudo cargar envios.')
+        setApproved(response.shipments || [])
+      } finally {
+        setApprovedLoading(false)
+      }
+    },
+    [adminToken, statusFilter]
+  )
+
+  const refreshLists = useCallback(
+    async (token = adminToken): Promise<void> => {
+      if (!normalizeAdminToken(token)) {
+        setMsg({ type: 'info', text: 'Ingresa el Bearer admin para gestionar envios.' })
+        setPending([])
+        setApproved([])
+        return
+      }
+
+      setMsg(null)
+      try {
+        await Promise.all([loadPending(token), loadApproved(token, statusFilter)])
+      } catch (error) {
+        setMsg({
+          type: 'error',
+          text: error instanceof Error ? error.message : 'No se pudieron cargar los envios.'
+        })
+      }
+    },
+    [adminToken, loadApproved, loadPending, statusFilter]
+  )
+
+  const loadDetail = useCallback(
+    async (orderId: string, token = adminToken): Promise<void> => {
+      const requestId = ++detailRequestIdRef.current
+      if (!normalizeAdminToken(token)) return
+      setDetailLoading(true)
+      try {
+        const response = await requestJson<ShipmentDetailResponse>(`/api/shipments/${orderId}`, {
+          headers: buildAuthHeaders(token)
+        })
+        if (!response.success || !response.order) {
+          throw new Error(response.error || 'No se pudo cargar el detalle del envio.')
+        }
+        if (
+          detailRequestIdRef.current !== requestId ||
+          selectedOrderIdRef.current !== orderId ||
+          response.order.id !== orderId
+        ) {
+          return
+        }
+        applyOrderQuoteState(response.order)
+        setAvailableCarriers([])
+        setAvailableServices([])
+        setRejectReason(response.order.shipment?.rejected_reason || '')
+        if (response.order.shipment?.approval_status === 'approved') {
+          void requestJson<ShipmentMutationResponse>(
+            `/api/shipments/${orderId}/remote-refresh?source=detail_open`,
+            {
+              method: 'POST',
+              headers: buildAuthHeaders(token)
+            },
+            60000
+          )
+            .then((refreshResponse) => {
+              if (!refreshResponse.success || !refreshResponse.order) return
+              if (selectedOrderIdRef.current === orderId) {
+                applyOrderQuoteState(refreshResponse.order)
+              }
+              void refreshLists(token)
+            })
+            .catch(() => null)
+        }
+      } finally {
+        if (detailRequestIdRef.current === requestId) {
+          setDetailLoading(false)
+        }
+      }
+    },
+    [adminToken, applyOrderQuoteState, refreshLists]
+  )
 
   useEffect(() => {
     selectedOrderIdRef.current = selectedOrderId
@@ -1629,7 +1707,7 @@ export default function ShipmentsManager(): React.JSX.Element {
   useEffect(() => {
     void refreshLists()
     void loadShipmentBoxTypes()
-  }, [statusFilter, adminToken])
+  }, [refreshLists, loadShipmentBoxTypes])
 
   useEffect(() => {
     detailRequestIdRef.current += 1
@@ -1642,7 +1720,7 @@ export default function ShipmentsManager(): React.JSX.Element {
 
     resetSelectedShipmentState()
     void loadDetail(selectedOrderId)
-  }, [selectedOrderId, adminToken])
+  }, [adminToken, loadDetail, resetSelectedShipmentState, selectedOrderId])
 
   useEffect(() => {
     if (!selectedOrderId || !normalizeAdminToken(adminToken)) return
@@ -1651,7 +1729,7 @@ export default function ShipmentsManager(): React.JSX.Element {
       setAvailableCarriers([])
       setAvailableServices([])
     })
-  }, [selectedOrderId, adminToken, manualParcelForm.carrier])
+  }, [adminToken, loadEnviaOptions, manualParcelForm.carrier, selectedOrderId])
 
   useEffect(() => {
     if (!selectedOrder || !hasDesktopApi()) return
@@ -1749,7 +1827,7 @@ export default function ShipmentsManager(): React.JSX.Element {
     setShowApproveConfirm(false)
     setMsg({ type: 'info', text: 'Generando guia de envio...' })
     try {
-      const response = await requestJson<ShipmentDetailResponse>(
+      const response = await requestJson<ShipmentMutationResponse>(
         `/api/shipments/${selectedOrderId}/approve`,
         {
           method: 'POST',
@@ -1766,12 +1844,13 @@ export default function ShipmentsManager(): React.JSX.Element {
         await ensureLocalGuideFiles(response.order).catch(() => null)
       }
       setRejectReason('')
+      const baseSuccessText =
+        getShipmentGuides(response.order).length > 1
+          ? 'Guias generadas y envio aprobado.'
+          : 'Guia generada y envio aprobado.'
       setMsg({
         type: 'success',
-        text:
-          getShipmentGuides(response.order).length > 1
-            ? 'Guias generadas y envio aprobado.'
-            : 'Guia generada y envio aprobado.'
+        text: response.warning ? `${baseSuccessText} Aviso: ${response.warning}` : baseSuccessText
       })
       await refreshLists()
     } catch (error) {
@@ -2002,7 +2081,7 @@ export default function ShipmentsManager(): React.JSX.Element {
     }
 
     const confirmed = window.confirm(
-      'Esto limpiara cotizaciones, guias, tracking, eventos y cache local de PDFs de todos los envios. No cancela guias ya creadas en Envia. ¿Continuar?'
+      'Esto limpiara cotizaciones, guias, tracking, eventos y cache local de PDFs de todos los envios. No cancela guias ya creadas en Envia. Continuar?'
     )
     if (!confirmed) return
 
@@ -2043,8 +2122,7 @@ export default function ShipmentsManager(): React.JSX.Element {
       ].join(' ')
 
       const failedDeletes = Number(response.label_objects_delete_failed || 0)
-      const warning =
-        failedDeletes > 0 ? ` Fallaron ${failedDeletes} eliminaciones en R2.` : ''
+      const warning = failedDeletes > 0 ? ` Fallaron ${failedDeletes} eliminaciones en R2.` : ''
       const localWarning = localCleanupError
         ? ` No se pudo limpiar la cache local de PDFs: ${localCleanupError}`
         : ''
@@ -2331,11 +2409,11 @@ export default function ShipmentsManager(): React.JSX.Element {
                         )}
                       </div>
                       <p className="mt-1 text-xs text-zinc-500">
-                        {boxType.code || 'Sin codigo'} • {boxType.inner_length_cm} x{' '}
+                        {boxType.code || 'Sin codigo'} - {boxType.inner_length_cm} x{' '}
                         {boxType.inner_width_cm} x {boxType.inner_height_cm} cm
                       </p>
                       <p className="mt-2 text-xs text-zinc-400">
-                        Capacidad: {boxType.max_products} producto(s) • Stock: {boxType.stock_qty}
+                        Capacidad: {boxType.max_products} producto(s) | Stock: {boxType.stock_qty}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2554,9 +2632,7 @@ export default function ShipmentsManager(): React.JSX.Element {
                 'partially_cancelled',
                 'cancelled',
                 'lost'
-              ] as Array<
-                ShipmentStatus | ''
-              >
+              ] as Array<ShipmentStatus | ''>
             ).map((status) => (
               <button
                 key={status || 'all'}
@@ -2933,8 +3009,8 @@ export default function ShipmentsManager(): React.JSX.Element {
                       <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-300">
                         <p className="font-semibold text-zinc-100">{selectedBoxType.name}</p>
                         <p className="mt-1">
-                          Interno: {selectedBoxType.inner_length_cm} x {selectedBoxType.inner_width_cm}{' '}
-                          x {selectedBoxType.inner_height_cm} cm
+                          Interno: {selectedBoxType.inner_length_cm} x{' '}
+                          {selectedBoxType.inner_width_cm} x {selectedBoxType.inner_height_cm} cm
                         </p>
                         <p className="mt-1">
                           Capacidad: {selectedBoxType.max_products} producto(s) por caja
@@ -3266,17 +3342,18 @@ export default function ShipmentsManager(): React.JSX.Element {
                       Refresh Envia
                     </button>
                   )}
-                  {isApprovedSelection && currentGuides.some((guide) => guide.remote_cancelable) && (
-                    <button
-                      type="button"
-                      onClick={() => void cancelAllGuides()}
-                      disabled={actionLoading}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      Cancelar todas
-                    </button>
-                  )}
+                  {isApprovedSelection &&
+                    currentGuides.some((guide) => guide.remote_cancelable) && (
+                      <button
+                        type="button"
+                        onClick={() => void cancelAllGuides()}
+                        disabled={actionLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Cancelar todas
+                      </button>
+                    )}
                 </div>
 
                 {isPendingSelection && !currentSelectedQuote && (
@@ -3397,18 +3474,21 @@ export default function ShipmentsManager(): React.JSX.Element {
                                       </p>
                                     )}
                                     {guide.box_type?.box_type_code && (
-                                      <p className="mt-1">
-                                        Caja: {guide.box_type.box_type_code}
-                                      </p>
+                                      <p className="mt-1">Caja: {guide.box_type.box_type_code}</p>
                                     )}
                                   </div>
                                 )}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {guide.label_url && (
                                     <a
-                                      href={guide.label_url}
+                                      href={
+                                        guide.label_r2_key
+                                          ? `/api/assets/${encodeURIComponent(guide.label_r2_key)}?download=1`
+                                          : guide.label_url
+                                      }
                                       target="_blank"
                                       rel="noreferrer"
+                                      download
                                       className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
                                     >
                                       Descargar etiqueta
@@ -3423,6 +3503,12 @@ export default function ShipmentsManager(): React.JSX.Element {
                                     >
                                       Abrir tracking
                                     </a>
+                                  )}
+                                  {guide.label_url && !hasDesktopApi() && (
+                                    <div className="w-full rounded-xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                                      Impresion y gestion local de PDF requieren la app de
+                                      escritorio.
+                                    </div>
                                   )}
                                   {hasDesktopApi() && guide.label_url && (
                                     <>

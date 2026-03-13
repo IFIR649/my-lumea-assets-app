@@ -142,7 +142,10 @@ async function ensureShipmentLabelsFolderPath(): Promise<string> {
   return folderPath
 }
 
-function buildShipmentLabelFilePath(request: ShipmentLabelFileRequest, folderPath: string): ShipmentLabelFile {
+function buildShipmentLabelFilePath(
+  request: ShipmentLabelFileRequest,
+  folderPath: string
+): ShipmentLabelFile {
   const orderFolder = join(folderPath, sanitizeFileName(request.orderId))
   const trackingPart = sanitizeFileName(request.trackingNumber || `guia-${request.guideIndex}`)
   const fileName = `${String(request.guideIndex).padStart(2, '0')}-${trackingPart}.pdf`
@@ -194,14 +197,17 @@ async function printLocalPdf(filePath: string): Promise<void> {
     await viewer.loadURL(buildLocalFileUrl(filePath))
     await new Promise<void>((resolve, reject) => {
       const timeoutId = setTimeout(() => reject(new Error('Timeout imprimiendo PDF.')), 15000)
-      viewer.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
-        clearTimeout(timeoutId)
-        if (success) {
-          resolve()
-          return
+      viewer.webContents.print(
+        { silent: false, printBackground: true },
+        (success, failureReason) => {
+          clearTimeout(timeoutId)
+          if (success) {
+            resolve()
+            return
+          }
+          reject(new Error(failureReason || 'No se pudo enviar el PDF a impresion.'))
         }
-        reject(new Error(failureReason || 'No se pudo enviar el PDF a impresion.'))
-      })
+      )
     })
   } finally {
     viewer.close()
@@ -322,19 +328,21 @@ app.whenReady().then(() => {
     try {
       const files = await readdir(folderPath)
       const images = await Promise.all(
-        files.filter((file) => IMAGE_FILE_PATTERN.test(file)).map(async (file) => {
-          const fullPath = join(folderPath, file)
-          const fileStats = await stat(fullPath)
+        files
+          .filter((file) => IMAGE_FILE_PATTERN.test(file))
+          .map(async (file) => {
+            const fullPath = join(folderPath, file)
+            const fileStats = await stat(fullPath)
 
-          return {
-            id: file,
-            name: file,
-            path: fullPath,
-            url: `local://${encodeURIComponent(fullPath)}`,
-            size: fileStats.size,
-            modifiedAt: fileStats.mtimeMs
-          }
-        })
+            return {
+              id: file,
+              name: file,
+              path: fullPath,
+              url: `local://${encodeURIComponent(fullPath)}`,
+              size: fileStats.size,
+              modifiedAt: fileStats.mtimeMs
+            }
+          })
       )
 
       return images.sort((left, right) => right.modifiedAt - left.modifiedAt)
@@ -383,7 +391,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'ensure-shipment-label-files',
-    async (_, payload: EnsureShipmentLabelFilesPayload): Promise<EnsureShipmentLabelFilesResult> => {
+    async (
+      _,
+      payload: EnsureShipmentLabelFilesPayload
+    ): Promise<EnsureShipmentLabelFilesResult> => {
       try {
         const labels = Array.isArray(payload?.labels) ? payload.labels : []
         const files = await Promise.all(

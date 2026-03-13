@@ -750,6 +750,25 @@ function buildAssetPreviewUrl(key: string): string {
   return `/api/assets/${encodeURIComponent(key)}`
 }
 
+function parseAssetDownloadFlag(value: string | null): boolean {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return normalized === '1' || normalized === 'true'
+}
+
+function buildAssetDownloadFileName(key: string, contentType: string | null): string {
+  const keyPart = key.split('/').pop() || ''
+  const sanitized = sanitizeFileName(keyPart || 'asset')
+  if (sanitized.includes('.')) {
+    return sanitized
+  }
+  if ((contentType || '').toLowerCase().includes('pdf')) {
+    return `${sanitized}.pdf`
+  }
+  return `${sanitized}.bin`
+}
+
 function parseAssetsLimit(value: string | null): number {
   const parsed = Number.parseInt(String(value || '').trim(), 10)
   if (!Number.isInteger(parsed) || parsed <= 0) return 50
@@ -1023,9 +1042,7 @@ function getShipmentOrderIdFromPath(pathname: string): string | null {
   return decoded || null
 }
 
-function getShipmentActionRoute(
-  pathname: string
-):
+function getShipmentActionRoute(pathname: string):
   | { orderId: string; action: 'quote'; mode: ShipmentQuoteMode }
   | {
       orderId: string
@@ -1950,17 +1967,6 @@ function buildShipmentBoxTypeSnapshot(
     inner_width_cm: innerWidth,
     inner_height_cm: innerHeight
   }) as Record<string, unknown>
-}
-
-function mergeShipmentBoxTypeSnapshot(
-  target: Record<string, unknown>,
-  snapshot: Record<string, unknown> | null
-): Record<string, unknown> {
-  if (!snapshot) return target
-  return {
-    ...target,
-    ...snapshot
-  }
 }
 
 function toShipmentBoxTypeResponse(row: ShipmentBoxTypeRow): Record<string, unknown> {
@@ -4882,10 +4888,10 @@ function normalizeBoxPlanInput(
       return {
         ok: true,
         boxPlan: boxTypeSnapshot
-          ? compactObject({
+          ? (compactObject({
               ...(boxTypeSnapshot || {}),
               products_per_box: parsedProductsPerBox || totalUnits
-            }) as Record<string, unknown>
+            }) as Record<string, unknown>)
           : null
       }
     }
@@ -4945,10 +4951,10 @@ function normalizeBoxPlanInput(
     return {
       ok: true,
       boxPlan: boxTypeSnapshot
-        ? compactObject({
+        ? (compactObject({
             ...(boxTypeSnapshot || {}),
             products_per_box: parsedProductsPerBox || totalUnits
-          }) as Record<string, unknown>
+          }) as Record<string, unknown>)
         : null
     }
   }
@@ -5003,7 +5009,8 @@ function resolveShipmentBoxes(parcel: Record<string, unknown>): Record<string, u
   }
 
   const boxTypeSnapshot =
-    buildShipmentBoxTypeSnapshot(boxPlan) || buildShipmentBoxTypeSnapshot(toObjectRecord(parcel.box_type))
+    buildShipmentBoxTypeSnapshot(boxPlan) ||
+    buildShipmentBoxTypeSnapshot(toObjectRecord(parcel.box_type))
   return [
     compactObject({
       box_type: boxTypeSnapshot,
@@ -5026,7 +5033,9 @@ function resolveShipmentBoxTypeUsage(
   const snapshot =
     buildShipmentBoxTypeSnapshot(toObjectRecord(parcel.box_type)) ||
     buildShipmentBoxTypeSnapshot(boxPlan) ||
-    buildShipmentBoxTypeSnapshot(Array.isArray(boxPlan?.boxes) ? toObjectRecord(boxPlan.boxes[0]) : null)
+    buildShipmentBoxTypeSnapshot(
+      Array.isArray(boxPlan?.boxes) ? toObjectRecord(boxPlan.boxes[0]) : null
+    )
   const boxTypeId = parseShipmentBoxTypeId(snapshot?.box_type_id, null)
   if (!boxTypeId) {
     return { boxTypeId: null, boxesUsed: 0, snapshot }
@@ -5049,7 +5058,11 @@ async function consumeShipmentBoxTypeStock(
 
   const currentBoxType = await fetchShipmentBoxTypeRow(env, usage.boxTypeId)
   if (!currentBoxType) {
-    return { boxType: usage.snapshot, warning: 'El tipo de caja seleccionado ya no existe.', boxesUsed: usage.boxesUsed }
+    return {
+      boxType: usage.snapshot,
+      warning: 'El tipo de caja seleccionado ya no existe.',
+      boxesUsed: usage.boxesUsed
+    }
   }
 
   const stockBefore = Number(currentBoxType.stock_qty || 0)
@@ -6314,7 +6327,10 @@ async function refreshOrderShipmentFromRemote(
 
     refreshedGuides.push({
       guide_index: guideIndex,
-      carrier: cleanText(remoteShipment?.carrier) || cleanText(trackingResult?.carrier) || cleanText(guide.carrier),
+      carrier:
+        cleanText(remoteShipment?.carrier) ||
+        cleanText(trackingResult?.carrier) ||
+        cleanText(guide.carrier),
       service: cleanText(remoteShipment?.service) || cleanText(guide.service),
       tracking_number:
         cleanText(trackingResult?.tracking_number) ||
@@ -6430,38 +6446,42 @@ async function cancelOrderShipmentGuide(
     provider_payload: cancelResult.payload
   })
 
-  const refreshResult = await refreshOrderShipmentFromRemote(env, orderId, 'cancel').catch(async () => {
-    const nextGuides = guideRecords.map((guide) =>
-      Number(guide?.guide_index || 0) === guideIndex
-        ? {
-            ...guide,
-            shipment_status: 'cancelled',
-            envia_response: {
-              kind: 'cancelled_locally_after_provider_ack',
-              remote_checked_at: new Date().toISOString(),
-              provider_payload: cancelResult.payload,
-              remote_cancelable: false
-            },
-            last_error: null
-          }
-        : guide
-    )
-    await replaceShipmentGuides(env, orderId, nextGuides as Array<Record<string, unknown>>)
-    const summary = summarizeShipmentHeaderFromGuides(nextGuides as Array<Record<string, unknown>>)
-    await upsertShipmentRow(env, orderId, {
-      shipment_status: summary.shipment_status,
-      envia_response_json: safeStringify({
-        kind: 'cancel_fallback',
-        provider_payload: cancelResult.payload
-      }),
-      last_sync_at: new Date().toISOString(),
-      last_error: null,
-      last_error_code: null
-    })
-    await updateOrderShippingStatus(env, orderId, summary.shipment_status)
-    const refreshed = await fetchOrderDetail(env, orderId)
-    return { success: true, order: refreshed }
-  })
+  const refreshResult = await refreshOrderShipmentFromRemote(env, orderId, 'cancel').catch(
+    async () => {
+      const nextGuides = guideRecords.map((guide) =>
+        Number(guide?.guide_index || 0) === guideIndex
+          ? {
+              ...guide,
+              shipment_status: 'cancelled',
+              envia_response: {
+                kind: 'cancelled_locally_after_provider_ack',
+                remote_checked_at: new Date().toISOString(),
+                provider_payload: cancelResult.payload,
+                remote_cancelable: false
+              },
+              last_error: null
+            }
+          : guide
+      )
+      await replaceShipmentGuides(env, orderId, nextGuides as Array<Record<string, unknown>>)
+      const summary = summarizeShipmentHeaderFromGuides(
+        nextGuides as Array<Record<string, unknown>>
+      )
+      await upsertShipmentRow(env, orderId, {
+        shipment_status: summary.shipment_status,
+        envia_response_json: safeStringify({
+          kind: 'cancel_fallback',
+          provider_payload: cancelResult.payload
+        }),
+        last_sync_at: new Date().toISOString(),
+        last_error: null,
+        last_error_code: null
+      })
+      await updateOrderShippingStatus(env, orderId, summary.shipment_status)
+      const refreshed = await fetchOrderDetail(env, orderId)
+      return { success: true, order: refreshed }
+    }
+  )
 
   await insertShipmentEvent(env, orderId, 'guide_cancelled', source, {
     guide_index: guideIndex,
@@ -7427,7 +7447,11 @@ async function handleApproveShipmentByOrderId(
 
     const summary = summarizeShipmentHeaderFromGuides(createdGuides)
     await replaceShipmentGuides(env, orderId, createdGuides)
-    const boxConsumption = await consumeShipmentBoxTypeStock(env, parcelResult.parcel, createdGuides.length)
+    const boxConsumption = await consumeShipmentBoxTypeStock(
+      env,
+      parcelResult.parcel,
+      createdGuides.length
+    )
 
     await upsertShipmentRow(env, orderId, {
       approval_status: 'approved',
@@ -7471,7 +7495,11 @@ async function handleApproveShipmentByOrderId(
     }
 
     const refreshed = await fetchOrderDetail(env, orderId)
-    return json(request, env, { success: true, order: refreshed })
+    return json(request, env, {
+      success: true,
+      order: refreshed,
+      warning: boxConsumption.warning || null
+    })
   } catch (error) {
     workerError(requestId, 'shipments:approve:error', error)
     const status = getHttpStatus(error, 500)
@@ -7702,7 +7730,9 @@ async function handleGetShipmentBoxTypes(
       return json(request, env, { success: false, error: authResult.error }, authResult.status)
     }
 
-    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) =>
+      toShipmentBoxTypeResponse(row)
+    )
     return json(request, env, { success: true, box_types: boxTypes })
   } catch (error) {
     workerError(requestId, 'shipment-box-types:list:error', error)
@@ -7764,7 +7794,9 @@ async function handleCreateShipmentBoxType(
       )
       .run()
 
-    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) =>
+      toShipmentBoxTypeResponse(row)
+    )
     return json(request, env, { success: true, box_types: boxTypes })
   } catch (error) {
     workerError(requestId, 'shipment-box-types:create:error', error)
@@ -7811,7 +7843,9 @@ async function handleUpdateShipmentBoxType(
       .bind(...values, boxTypeId)
       .run()
 
-    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) =>
+      toShipmentBoxTypeResponse(row)
+    )
     return json(request, env, { success: true, box_types: boxTypes })
   } catch (error) {
     workerError(requestId, 'shipment-box-types:update:error', error)
@@ -7841,7 +7875,9 @@ async function handleDeleteShipmentBoxType(
     }
 
     await env.DB.prepare('DELETE FROM shipment_box_types WHERE id = ?').bind(boxTypeId).run()
-    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) => toShipmentBoxTypeResponse(row))
+    const boxTypes = (await listShipmentBoxTypeRows(env)).map((row) =>
+      toShipmentBoxTypeResponse(row)
+    )
     return json(request, env, { success: true, box_types: boxTypes })
   } catch (error) {
     workerError(requestId, 'shipment-box-types:delete:error', error)
@@ -7953,7 +7989,8 @@ async function handleCancelAllShipmentGuidesByOrderId(
 
     for (const guide of guides as Array<Record<string, unknown>>) {
       const guideIndex = Number(guide.guide_index || 0)
-      if (!guideIndex || normalizeWorkerShippingStatus(guide.shipment_status) === 'cancelled') continue
+      if (!guideIndex || normalizeWorkerShippingStatus(guide.shipment_status) === 'cancelled')
+        continue
       try {
         const response = await cancelOrderShipmentGuide(env, orderId, guideIndex, 'admin')
         latestOrder = toObjectRecord(response.order) || latestOrder
@@ -8054,8 +8091,9 @@ async function handleResetShipmentTempStorage(
     const labelDeleteResults = await Promise.allSettled(
       uniqueLabelKeys.map((key) => env.ASSETS_BUCKET.delete(key))
     )
-    const labelObjectsDeleted = labelDeleteResults.filter((result) => result.status === 'fulfilled')
-      .length
+    const labelObjectsDeleted = labelDeleteResults.filter(
+      (result) => result.status === 'fulfilled'
+    ).length
     const labelObjectsDeleteFailed = labelDeleteResults.length - labelObjectsDeleted
 
     const [guidesDeleteResult, eventsDeleteResult, shipmentsResetResult, ordersResetResult] =
@@ -8417,6 +8455,7 @@ async function handleAssetGet(
     return json(request, env, { success: false, error: 'Llave de archivo invalida.' }, 400)
   }
 
+  const shouldDownload = parseAssetDownloadFlag(new URL(request.url).searchParams.get('download'))
   const object = await env.ASSETS_BUCKET.get(key)
 
   if (!object) {
@@ -8426,6 +8465,12 @@ async function handleAssetGet(
   const headers = withCors(request, env)
   object.writeHttpMetadata(headers)
   headers.set('ETag', object.httpEtag)
+  if (shouldDownload) {
+    headers.set(
+      'Content-Disposition',
+      `attachment; filename="${buildAssetDownloadFileName(key, object.httpMetadata?.contentType || null)}"`
+    )
+  }
   workerLog(requestId, 'asset:get:ok')
   return new Response(object.body, { headers })
 }

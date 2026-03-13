@@ -162,7 +162,11 @@ export class EnviaRequestError extends Error {
 }
 
 function normalizeMode(value: unknown): 'test' | 'prod' {
-  return String(value || '').trim().toLowerCase() === 'prod' ? 'prod' : 'test'
+  return String(value || '')
+    .trim()
+    .toLowerCase() === 'prod'
+    ? 'prod'
+    : 'test'
 }
 
 function normalizeBaseUrl(value: unknown): string {
@@ -328,7 +332,8 @@ function hasProviderError(payload: unknown): boolean {
 }
 
 function buildRequestError(result: RequestResult, fallbackLabel: string): EnviaRequestError {
-  const message = extractProviderErrorMessage(result.payload) || `${fallbackLabel} con HTTP ${result.status}.`
+  const message =
+    extractProviderErrorMessage(result.payload) || `${fallbackLabel} con HTTP ${result.status}.`
   return new EnviaRequestError(message, {
     status: result.status,
     payload: result.payload,
@@ -398,8 +403,7 @@ function resolveConfig(env: EnviaEnvLike): {
     queriesBaseUrl:
       normalizeBaseUrl(env.ENVIA_QUERIES_BASE_URL) ||
       (mode === 'prod' ? 'https://queries.envia.com' : 'https://queries-test.envia.com'),
-    geocodesBaseUrl:
-      normalizeBaseUrl(env.ENVIA_GEOCODES_BASE_URL) || 'https://geocodes.envia.com',
+    geocodesBaseUrl: normalizeBaseUrl(env.ENVIA_GEOCODES_BASE_URL) || 'https://geocodes.envia.com',
     allowedCarriers: String(env.ENVIA_ALLOWED_CARRIERS || '')
       .split(',')
       .map((value) => value.trim().toLowerCase())
@@ -541,7 +545,11 @@ function buildHeaders(apiKey: string): HeadersInit {
 }
 
 function normalizeCurrency(value: unknown): string {
-  return String(value || 'MXN').trim().toUpperCase() || 'MXN'
+  return (
+    String(value || 'MXN')
+      .trim()
+      .toUpperCase() || 'MXN'
+  )
 }
 
 function normalizeAmountToCents(value: unknown): number | null {
@@ -563,7 +571,9 @@ function quoteCandidatesFromPayload(payload: unknown): JsonRecord[] {
 function truthyValue(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value > 0
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
   if (!normalized) return null
   if (['true', '1', 'yes', 'active'].includes(normalized)) return true
   if (['false', '0', 'no', 'inactive'].includes(normalized)) return false
@@ -745,11 +755,11 @@ function getShipmentCancelable(item: JsonRecord): boolean | null {
 function looksLikeRemoteShipmentCandidate(item: JsonRecord): boolean {
   return Boolean(
     getShipmentIdentifier(item) ||
-      getShipmentTrackingNumber(item) ||
-      getShipmentStatusText(item) ||
-      getShipmentCarrier(item) ||
-      getShipmentLabelUrl(item) ||
-      getShipmentLabelBase64(item)
+    getShipmentTrackingNumber(item) ||
+    getShipmentStatusText(item) ||
+    getShipmentCarrier(item) ||
+    getShipmentLabelUrl(item) ||
+    getShipmentLabelBase64(item)
   )
 }
 
@@ -794,8 +804,13 @@ function normalizeRemoteShipmentCollection(payload: unknown): NormalizedRemoteSh
   })
 }
 
-function sameIdentifier(left: string | null | undefined, right: string | null | undefined): boolean {
-  return Boolean(left && right && String(left).trim().toLowerCase() === String(right).trim().toLowerCase())
+function sameIdentifier(
+  left: string | null | undefined,
+  right: string | null | undefined
+): boolean {
+  return Boolean(
+    left && right && String(left).trim().toLowerCase() === String(right).trim().toLowerCase()
+  )
 }
 
 function findMatchingRemoteShipment(
@@ -937,7 +952,9 @@ function shipmentCandidatesFromPayload(payload: unknown): JsonRecord[] {
 }
 
 function normalizeShipmentStatus(value: unknown): NormalizedTrackingResult['status'] {
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
   if (
     normalized.includes('cancel') ||
     normalized.includes('void') ||
@@ -966,7 +983,10 @@ function normalizeShipmentStatus(value: unknown): NormalizedTrackingResult['stat
   return 'pending'
 }
 
-export function normalizeQuotes(payload: unknown, allowedCarriers: string[] = []): NormalizedQuote[] {
+export function normalizeQuotes(
+  payload: unknown,
+  allowedCarriers: string[] = []
+): NormalizedQuote[] {
   const quotes = quoteCandidatesFromPayload(payload)
     .map((item) => {
       const carrier = getQuoteCarrier(item)
@@ -1101,9 +1121,18 @@ export async function pingEnviaApis(
     return {
       configured: false,
       mode: normalizeMode(env.ENVIA_MODE),
-      shipping: { ok: false, error: error instanceof Error ? error.message : 'Envia no configurado.' },
-      queries: { ok: false, error: error instanceof Error ? error.message : 'Envia no configurado.' },
-      geocodes: { ok: false, error: error instanceof Error ? error.message : 'Envia no configurado.' },
+      shipping: {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Envia no configurado.'
+      },
+      queries: {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Envia no configurado.'
+      },
+      geocodes: {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Envia no configurado.'
+      },
       checked_at
     }
   }
@@ -1124,7 +1153,10 @@ export async function pingEnviaApis(
   const queries = await tryJsonPaths(
     config.queriesBaseUrl,
     QUERIES_PATHS,
-    { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${config.apiKey}` } },
+    {
+      method: 'GET',
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiKey}` }
+    },
     config.timeoutMs
   ).catch((error) => ({
     ok: false,
@@ -1354,7 +1386,10 @@ export async function listShipmentsByMonth(
   const limit = pickNumber(options.limit, 100) || 100
   for (const buildPath of SHIPMENTS_BY_MONTH_QUERY_PATHS) {
     try {
-      const payload = await requestQueriesPayload(config, buildPath(options.month, options.year, limit))
+      const payload = await requestQueriesPayload(
+        config,
+        buildPath(options.month, options.year, limit)
+      )
       if (!payload) continue
       const shipments = normalizeRemoteShipmentCollection(payload)
       if (shipments.length > 0) return shipments

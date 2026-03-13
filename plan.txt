@@ -66,3 +66,19 @@
 - `plan.txt` se escribio en espanol.
 - El documento describe el working tree actual, no solo `HEAD`.
 - El fix de cajas cuenta como `implementado localmente`, pero no como `cerrado` hasta quedar desplegado y validado.
+
+
+
+
+cambios:
+Corregido. Ese warning de useEffect ya no aparece en ShipmentsManager.tsx.
+
+Ajustes aplicados:
+
+Convertí a useCallback las funciones usadas por esos efectos (refreshLists, loadShipmentBoxTypes, loadDetail, loadEnviaOptions, y funciones relacionadas) para que las dependencias sean estables.
+Actualicé los dependency arrays de los useEffect que marcaba ESLint.
+Formateé el archivo con Prettier para evitar warnings de formato.
+Validación:
+
+npx eslint src/renderer/src/components/ShipmentsManager.tsx ahora queda limpio (sin warnings).
+El warning específico que mencionaste quedó resuelto, junto con los otros 2 de hooks que había en ese mismo bloque.
