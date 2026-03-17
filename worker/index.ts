@@ -8538,6 +8538,236 @@ async function handleDeleteAsset(
   }
 }
 
+// ─── Analytics handlers ──────────────────────────────────────────────────────
+
+async function handleAnalyticsOrders(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'analytics:orders:start')
+  const auth = assertAdminToken(request, env)
+  if (!auth.ok) return json(request, env, { success: false, error: auth.error }, auth.status)
+
+  try {
+    const url = new URL(request.url)
+    const now = new Date()
+    const defaultEnd = new Date(now)
+    defaultEnd.setDate(defaultEnd.getDate() + 1)
+    const defaultStart = new Date(now)
+    defaultStart.setDate(defaultStart.getDate() - 30)
+
+    const startParam = url.searchParams.get('start') || defaultStart.toISOString().slice(0, 10)
+    const endParam = url.searchParams.get('end') || defaultEnd.toISOString().slice(0, 10)
+    // Add one day to end to make it inclusive
+    const endExclusive = new Date(endParam)
+    endExclusive.setDate(endExclusive.getDate() + 1)
+    const endStr = endExclusive.toISOString().slice(0, 10)
+
+    const [summaryRow, byStatusRows, seriesRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COUNT(*) AS total_orders,
+                SUM(COALESCE(total_amount_cents, 0)) AS total_revenue_cents,
+                AVG(COALESCE(total_amount_cents, 0)) AS avg_order_cents
+         FROM orders
+         WHERE created_at >= ? AND created_at < ?`
+      )
+        .bind(startParam, endStr)
+        .first<{ total_orders: number; total_revenue_cents: number; avg_order_cents: number }>(),
+      env.DB.prepare(
+        `SELECT status, COUNT(*) AS count
+         FROM orders
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY status
+         ORDER BY count DESC`
+      )
+        .bind(startParam, endStr)
+        .all<{ status: string; count: number }>(),
+      env.DB.prepare(
+        `SELECT date(created_at) AS date,
+                COUNT(*) AS orders,
+                SUM(COALESCE(total_amount_cents, 0)) AS revenue_cents
+         FROM orders
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY date(created_at)
+         ORDER BY date ASC`
+      )
+        .bind(startParam, endStr)
+        .all<{ date: string; orders: number; revenue_cents: number }>()
+    ])
+
+    return json(request, env, {
+      success: true,
+      period: { start: startParam, end: endParam },
+      summary: {
+        total_orders: summaryRow?.total_orders ?? 0,
+        total_revenue_cents: summaryRow?.total_revenue_cents ?? 0,
+        avg_order_cents: Math.round(summaryRow?.avg_order_cents ?? 0),
+        by_status: byStatusRows.results
+      },
+      series: seriesRows.results
+    })
+  } catch (error) {
+    workerError(requestId, 'analytics:orders:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error en analytics de pedidos: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleAnalyticsShipments(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'analytics:shipments:start')
+  const auth = assertAdminToken(request, env)
+  if (!auth.ok) return json(request, env, { success: false, error: auth.error }, auth.status)
+
+  try {
+    const url = new URL(request.url)
+    const now = new Date()
+    const defaultEnd = new Date(now)
+    defaultEnd.setDate(defaultEnd.getDate() + 1)
+    const defaultStart = new Date(now)
+    defaultStart.setDate(defaultStart.getDate() - 30)
+
+    const startParam = url.searchParams.get('start') || defaultStart.toISOString().slice(0, 10)
+    const endParam = url.searchParams.get('end') || defaultEnd.toISOString().slice(0, 10)
+    const endExclusive = new Date(endParam)
+    endExclusive.setDate(endExclusive.getDate() + 1)
+    const endStr = endExclusive.toISOString().slice(0, 10)
+
+    const [byApprovalRows, byStatusRows, byCarrierRows, summaryRow] = await Promise.all([
+      env.DB.prepare(
+        `SELECT approval_status, COUNT(*) AS count
+         FROM order_shipments
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY approval_status`
+      )
+        .bind(startParam, endStr)
+        .all<{ approval_status: string; count: number }>(),
+      env.DB.prepare(
+        `SELECT shipment_status, COUNT(*) AS count
+         FROM order_shipments
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY shipment_status`
+      )
+        .bind(startParam, endStr)
+        .all<{ shipment_status: string; count: number }>(),
+      env.DB.prepare(
+        `SELECT COALESCE(carrier, 'sin_carrier') AS carrier,
+                COUNT(*) AS count,
+                SUM(COALESCE(quote_amount_cents, 0)) AS total_quote_cents
+         FROM order_shipments
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY carrier
+         ORDER BY count DESC`
+      )
+        .bind(startParam, endStr)
+        .all<{ carrier: string; count: number; total_quote_cents: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS total,
+                AVG(quote_amount_cents) AS avg_quote_cents,
+                SUM(COALESCE(quote_amount_cents, 0)) AS total_quote_cents
+         FROM order_shipments
+         WHERE created_at >= ? AND created_at < ?`
+      )
+        .bind(startParam, endStr)
+        .first<{ total: number; avg_quote_cents: number | null; total_quote_cents: number }>()
+    ])
+
+    return json(request, env, {
+      success: true,
+      period: { start: startParam, end: endParam },
+      by_approval: byApprovalRows.results,
+      by_status: byStatusRows.results,
+      by_carrier: byCarrierRows.results,
+      summary: {
+        total: summaryRow?.total ?? 0,
+        avg_quote_cents: Math.round(summaryRow?.avg_quote_cents ?? 0),
+        total_quote_cents: summaryRow?.total_quote_cents ?? 0
+      }
+    })
+  } catch (error) {
+    workerError(requestId, 'analytics:shipments:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error en analytics de envios: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+async function handleAnalyticsProducts(
+  request: Request,
+  env: Env,
+  requestId: string
+): Promise<Response> {
+  workerLog(requestId, 'analytics:products:start')
+  const auth = assertAdminToken(request, env)
+  if (!auth.ok) return json(request, env, { success: false, error: auth.error }, auth.status)
+
+  try {
+    const [summaryRow, lowStockRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT
+           COUNT(CASE WHEN is_active = 1 THEN 1 END) AS total_active,
+           COUNT(*) AS total_products,
+           SUM(COALESCE(stock, 0)) AS total_stock,
+           SUM(COALESCE(price_cents, 0) * COALESCE(stock, 0)) AS total_value_cents,
+           COUNT(CASE WHEN COALESCE(stock, 0) <= 5 AND is_active = 1 THEN 1 END) AS low_stock_count,
+           COUNT(CASE WHEN is_bestseller = 1 THEN 1 END) AS bestsellers,
+           COUNT(CASE WHEN is_new_arrival = 1 THEN 1 END) AS new_arrivals
+         FROM products`
+      ).first<{
+        total_active: number
+        total_products: number
+        total_stock: number
+        total_value_cents: number
+        low_stock_count: number
+        bestsellers: number
+        new_arrivals: number
+      }>(),
+      env.DB.prepare(
+        `SELECT id, title, stock, price_cents
+         FROM products
+         WHERE is_active = 1 AND COALESCE(stock, 0) <= 5
+         ORDER BY stock ASC
+         LIMIT 10`
+      ).all<{ id: number; title: string; stock: number; price_cents: number }>()
+    ])
+
+    return json(request, env, {
+      success: true,
+      summary: {
+        total_active: summaryRow?.total_active ?? 0,
+        total_products: summaryRow?.total_products ?? 0,
+        total_stock: summaryRow?.total_stock ?? 0,
+        total_value_cents: summaryRow?.total_value_cents ?? 0,
+        low_stock_count: summaryRow?.low_stock_count ?? 0,
+        bestsellers: summaryRow?.bestsellers ?? 0,
+        new_arrivals: summaryRow?.new_arrivals ?? 0
+      },
+      low_stock: lowStockRows.results
+    })
+  } catch (error) {
+    workerError(requestId, 'analytics:products:error', error)
+    return json(
+      request,
+      env,
+      { success: false, error: `Error en analytics de productos: ${getErrorMessage(error)}` },
+      500
+    )
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default {
   async fetch(request, env): Promise<Response> {
     const requestId = crypto.randomUUID().slice(0, 8)
@@ -8623,6 +8853,33 @@ export default {
 
     if (request.method === 'GET' && pathname === '/api/shipments') {
       const response = await handleGetShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/analytics/orders') {
+      const response = await handleAnalyticsOrders(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/analytics/shipments') {
+      const response = await handleAnalyticsShipments(request, env, requestId)
+      workerLog(requestId, 'request:done', {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt
+      })
+      return response
+    }
+
+    if (request.method === 'GET' && pathname === '/api/analytics/products') {
+      const response = await handleAnalyticsProducts(request, env, requestId)
       workerLog(requestId, 'request:done', {
         status: response.status,
         elapsedMs: Date.now() - startedAt

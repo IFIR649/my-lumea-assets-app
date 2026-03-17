@@ -2430,233 +2430,233 @@ export default function ShipmentsManager(): React.JSX.Element {
 
       {mainView === 'boxes' && (
         <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-brand/70">Operacion</p>
-            <h3 className="mt-1 text-lg font-semibold text-zinc-100">Catalogo de cajas</h3>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Administra medidas internas, capacidad y stock. El envio guarda snapshot de la caja
-              elegida al momento de generar guias.
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-brand/70">Operacion</p>
+              <h3 className="mt-1 text-lg font-semibold text-zinc-100">Catalogo de cajas</h3>
+              <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                Administra medidas internas, capacidad y stock. El envio guarda snapshot de la caja
+                elegida al momento de generar guias.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => resetBoxTypeEditor()}
+              disabled={boxTypeSaving}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Plus className="h-4 w-4" />
+              Nueva caja
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => resetBoxTypeEditor()}
-            disabled={boxTypeSaving}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Plus className="h-4 w-4" />
-            Nueva caja
-          </button>
-        </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-3">
-            {!hasToken ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
-                Ingresa el token admin para administrar el catalogo de cajas.
-              </div>
-            ) : boxTypesLoading ? (
-              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-400">
-                Cargando cajas...
-              </div>
-            ) : boxTypes.length === 0 ? (
-              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
-                Aun no hay tipos de caja registrados.
-              </div>
-            ) : (
-              boxTypes.map((boxType) => (
-                <div
-                  key={boxType.id}
-                  className={cn(
-                    'rounded-2xl border p-4',
-                    selectedBoxTypeId === String(boxType.id)
-                      ? 'border-brand/30 bg-brand/10'
-                      : 'border-white/8 bg-black/20'
-                  )}
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-zinc-100">{boxType.name}</p>
-                        {!boxType.is_active && (
-                          <span className="rounded-full border border-zinc-400/25 bg-zinc-500/10 px-2 py-0.5 text-[11px] font-semibold text-zinc-300">
-                            Inactiva
-                          </span>
-                        )}
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-3">
+              {!hasToken ? (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
+                  Ingresa el token admin para administrar el catalogo de cajas.
+                </div>
+              ) : boxTypesLoading ? (
+                <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-400">
+                  Cargando cajas...
+                </div>
+              ) : boxTypes.length === 0 ? (
+                <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-center text-sm text-zinc-500">
+                  Aun no hay tipos de caja registrados.
+                </div>
+              ) : (
+                boxTypes.map((boxType) => (
+                  <div
+                    key={boxType.id}
+                    className={cn(
+                      'rounded-2xl border p-4',
+                      selectedBoxTypeId === String(boxType.id)
+                        ? 'border-brand/30 bg-brand/10'
+                        : 'border-white/8 bg-black/20'
+                    )}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-zinc-100">{boxType.name}</p>
+                          {!boxType.is_active && (
+                            <span className="rounded-full border border-zinc-400/25 bg-zinc-500/10 px-2 py-0.5 text-[11px] font-semibold text-zinc-300">
+                              Inactiva
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {boxType.code || 'Sin codigo'} - {boxType.inner_length_cm} x{' '}
+                          {boxType.inner_width_cm} x {boxType.inner_height_cm} cm
+                        </p>
+                        <p className="mt-2 text-xs text-zinc-400">
+                          Capacidad: {boxType.max_products} producto(s) | Stock: {boxType.stock_qty}
+                        </p>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {boxType.code || 'Sin codigo'} - {boxType.inner_length_cm} x{' '}
-                        {boxType.inner_width_cm} x {boxType.inner_height_cm} cm
-                      </p>
-                      <p className="mt-2 text-xs text-zinc-400">
-                        Capacidad: {boxType.max_products} producto(s) | Stock: {boxType.stock_qty}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedOrder && (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedOrder && (
+                          <button
+                            type="button"
+                            onClick={() => applyBoxTypeSelection(String(boxType.id))}
+                            className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-black"
+                          >
+                            Usar en este envio
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => applyBoxTypeSelection(String(boxType.id))}
-                          className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-black"
+                          onClick={() => startEditingBoxType(boxType)}
+                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
                         >
-                          Usar en este envio
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => startEditingBoxType(boxType)}
-                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteShipmentBoxType(boxType)}
-                        className="rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteShipmentBoxType(boxType)}
+                          className="rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
 
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-            <p className="text-sm font-semibold text-zinc-100">
-              {editingBoxTypeId ? 'Editar caja' : 'Registrar caja'}
-            </p>
-            <div className="mt-4 grid gap-3">
-              <label className="space-y-2 text-xs text-zinc-400">
-                <span>Nombre</span>
-                <input
-                  value={boxTypeForm.name}
-                  onChange={(event) =>
-                    setBoxTypeForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                />
-              </label>
-              <label className="space-y-2 text-xs text-zinc-400">
-                <span>Codigo</span>
-                <input
-                  value={boxTypeForm.code}
-                  onChange={(event) =>
-                    setBoxTypeForm((current) => ({ ...current, code: event.target.value }))
-                  }
-                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+              <p className="text-sm font-semibold text-zinc-100">
+                {editingBoxTypeId ? 'Editar caja' : 'Registrar caja'}
+              </p>
+              <div className="mt-4 grid gap-3">
                 <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Largo</span>
+                  <span>Nombre</span>
                   <input
-                    value={boxTypeForm.inner_length_cm}
+                    value={boxTypeForm.name}
                     onChange={(event) =>
-                      setBoxTypeForm((current) => ({
-                        ...current,
-                        inner_length_cm: event.target.value
-                      }))
+                      setBoxTypeForm((current) => ({ ...current, name: event.target.value }))
                     }
                     className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
                   />
                 </label>
                 <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Ancho</span>
+                  <span>Codigo</span>
                   <input
-                    value={boxTypeForm.inner_width_cm}
+                    value={boxTypeForm.code}
                     onChange={(event) =>
-                      setBoxTypeForm((current) => ({
-                        ...current,
-                        inner_width_cm: event.target.value
-                      }))
+                      setBoxTypeForm((current) => ({ ...current, code: event.target.value }))
                     }
                     className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
                   />
                 </label>
-                <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Alto</span>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Largo</span>
+                    <input
+                      value={boxTypeForm.inner_length_cm}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({
+                          ...current,
+                          inner_length_cm: event.target.value
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Ancho</span>
+                    <input
+                      value={boxTypeForm.inner_width_cm}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({
+                          ...current,
+                          inner_width_cm: event.target.value
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Alto</span>
+                    <input
+                      value={boxTypeForm.inner_height_cm}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({
+                          ...current,
+                          inner_height_cm: event.target.value
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Max. productos</span>
+                    <input
+                      value={boxTypeForm.max_products}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({
+                          ...current,
+                          max_products: event.target.value
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Stock</span>
+                    <input
+                      value={boxTypeForm.stock_qty}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({ ...current, stock_qty: event.target.value }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                  <label className="space-y-2 text-xs text-zinc-400">
+                    <span>Orden</span>
+                    <input
+                      value={boxTypeForm.sort}
+                      onChange={(event) =>
+                        setBoxTypeForm((current) => ({ ...current, sort: event.target.value }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs text-zinc-400">
                   <input
-                    value={boxTypeForm.inner_height_cm}
+                    type="checkbox"
+                    checked={boxTypeForm.is_active}
                     onChange={(event) =>
-                      setBoxTypeForm((current) => ({
-                        ...current,
-                        inner_height_cm: event.target.value
-                      }))
+                      setBoxTypeForm((current) => ({ ...current, is_active: event.target.checked }))
                     }
-                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
                   />
+                  Activa
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Max. productos</span>
-                  <input
-                    value={boxTypeForm.max_products}
-                    onChange={(event) =>
-                      setBoxTypeForm((current) => ({
-                        ...current,
-                        max_products: event.target.value
-                      }))
-                    }
-                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                  />
-                </label>
-                <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Stock</span>
-                  <input
-                    value={boxTypeForm.stock_qty}
-                    onChange={(event) =>
-                      setBoxTypeForm((current) => ({ ...current, stock_qty: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                  />
-                </label>
-                <label className="space-y-2 text-xs text-zinc-400">
-                  <span>Orden</span>
-                  <input
-                    value={boxTypeForm.sort}
-                    onChange={(event) =>
-                      setBoxTypeForm((current) => ({ ...current, sort: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                  />
-                </label>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveShipmentBoxType()}
+                  disabled={!hasToken || boxTypeSaving}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {editingBoxTypeId ? 'Actualizar caja' : 'Guardar caja'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => resetBoxTypeEditor()}
+                  disabled={boxTypeSaving}
+                  className="rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Limpiar
+                </button>
               </div>
-              <label className="inline-flex items-center gap-2 text-xs text-zinc-400">
-                <input
-                  type="checkbox"
-                  checked={boxTypeForm.is_active}
-                  onChange={(event) =>
-                    setBoxTypeForm((current) => ({ ...current, is_active: event.target.checked }))
-                  }
-                />
-                Activa
-              </label>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void saveShipmentBoxType()}
-                disabled={!hasToken || boxTypeSaving}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Save className="h-4 w-4" />
-                {editingBoxTypeId ? 'Actualizar caja' : 'Guardar caja'}
-              </button>
-              <button
-                type="button"
-                onClick={() => resetBoxTypeEditor()}
-                disabled={boxTypeSaving}
-                className="rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Limpiar
-              </button>
             </div>
           </div>
-        </div>
         </section>
       )}
 
@@ -2755,7 +2755,9 @@ export default function ShipmentsManager(): React.JSX.Element {
           <div className="flex h-full w-full flex-col border border-white/10 bg-surface100 shadow-2xl sm:h-[92vh] sm:max-w-6xl sm:rounded-3xl">
             <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-5">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-brand/70">Detalle envio</p>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-brand/70">
+                  Detalle envio
+                </p>
                 <h3 className="mt-1 text-base font-semibold text-zinc-100">
                   {selectedOrderId || 'Sin seleccion'}
                 </h3>
@@ -2769,1252 +2771,1294 @@ export default function ShipmentsManager(): React.JSX.Element {
               </button>
             </div>
             <section className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
-          {!selectedOrderId ? (
-            <div className="flex min-h-[520px] flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-black/20 px-6 text-center">
-              <Truck className="h-8 w-8 text-brand/80" />
-              <h3 className="mt-4 text-lg font-semibold text-zinc-100">Selecciona un envio</h3>
-              <p className="mt-2 max-w-md text-sm text-zinc-500">
-                Aqui veras el detalle del pedido, la validacion del CP, el paquete y las acciones
-                para cotizar, aprobar o sincronizar la guia.
-              </p>
-            </div>
-          ) : detailLoading || !selectedOrder ? (
-            <div className="flex min-h-[520px] items-center justify-center rounded-3xl border border-white/8 bg-black/20 text-sm text-zinc-400">
-              Cargando detalle...
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Detalle</p>
-                  <h3 className="mt-1 text-xl font-semibold text-zinc-100">{selectedOrder.id}</h3>
-                  <p className="mt-2 text-sm text-zinc-400">
-                    {selectedOrder.customer_name || selectedOrder.customer_email}
+              {!selectedOrderId ? (
+                <div className="flex min-h-[520px] flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-black/20 px-6 text-center">
+                  <Truck className="h-8 w-8 text-brand/80" />
+                  <h3 className="mt-4 text-lg font-semibold text-zinc-100">Selecciona un envio</h3>
+                  <p className="mt-2 max-w-md text-sm text-zinc-500">
+                    Aqui veras el detalle del pedido, la validacion del CP, el paquete y las
+                    acciones para cotizar, aprobar o sincronizar la guia.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    className={cn(
-                      'rounded-full border px-3 py-1.5 text-xs font-semibold',
-                      approvalClass(selectedOrder.shipment?.approval_status || 'pending')
-                    )}
-                  >
-                    {approvalLabel(selectedOrder.shipment?.approval_status || 'pending')}
-                  </span>
-                  <span
-                    className={cn(
-                      'rounded-full border px-3 py-1.5 text-xs font-semibold',
-                      statusClass(selectedOrder.shipment?.shipment_status || 'pending')
-                    )}
-                  >
-                    {statusLabel(selectedOrder.shipment?.shipment_status || 'pending')}
-                  </span>
+              ) : detailLoading || !selectedOrder ? (
+                <div className="flex min-h-[520px] items-center justify-center rounded-3xl border border-white/8 bg-black/20 text-sm text-zinc-400">
+                  Cargando detalle...
                 </div>
-              </div>
-
-              <div className="overflow-x-auto pb-1">
-                <div className="inline-flex min-w-max rounded-2xl border border-white/10 bg-black/30 p-1">
-                  {detailTabs.map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      onClick={() => setDetailTab(tab.value)}
-                      className={cn(
-                        'rounded-xl px-4 py-2 text-sm font-semibold transition',
-                        detailTab === tab.value
-                          ? 'bg-brand text-black'
-                          : 'text-zinc-300 hover:bg-white/5'
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {detailTab === 'summary' && (
-                <ShipmentSummaryPanel>
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                        <MapPin className="h-4 w-4 text-brand" />
-                        Destino
-                      </div>
-                      <div className="mt-3 space-y-2 text-sm text-zinc-300">
-                        <p>{selectedOrder.customer_name || 'Cliente sin nombre'}</p>
-                        <p>{selectedOrder.customer_email}</p>
-                        {selectedOrder.customer_phone && <p>{selectedOrder.customer_phone}</p>}
-                        {addressLines.map((line) => (
-                          <p key={line}>{line}</p>
-                        ))}
-                      </div>
-                      <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-3 text-xs text-zinc-400">
-                        <p className="font-semibold text-zinc-200">Validacion de CP</p>
-                        <p className="mt-2">
-                          Resultado:{' '}
-                          <span
-                            className={cn(
-                              zipValidation.deliverable === true && 'text-emerald-300',
-                              zipValidation.deliverable === false && 'text-rose-300',
-                              zipValidation.deliverable === null && 'text-zinc-300'
-                            )}
-                          >
-                            {zipValidation.deliverable === true
-                              ? 'Enviable'
-                              : zipValidation.deliverable === false
-                                ? 'No enviable'
-                                : 'Sin dato'}
-                          </span>
-                        </p>
-                        {(zipValidation.city || zipValidation.state || zipValidation.zip) && (
-                          <p className="mt-1">
-                            {zipValidation.city || '-'} / {zipValidation.state || '-'} /{' '}
-                            {zipValidation.zip || '-'}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                        <Package className="h-4 w-4 text-brand" />
-                        Resumen comercial
-                      </div>
-                      <div className="mt-3 grid gap-3 text-sm text-zinc-300 sm:grid-cols-2">
-                        <div>
-                          <p className="text-zinc-500">Unidades</p>
-                          <p className="mt-1 font-semibold text-zinc-100">
-                            {selectedOrder.summary.units_total}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Items</p>
-                          <p className="mt-1 font-semibold text-zinc-100">
-                            {selectedOrder.summary.items_count}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Subtotal</p>
-                          <p className="mt-1 font-semibold text-zinc-100">
-                            {formatMoney(
-                              selectedOrder.summary.subtotal_cents,
-                              selectedOrder.currency
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Total</p>
-                          <p className="mt-1 font-semibold text-zinc-100">
-                            {formatMoney(selectedOrder.total_amount_cents, selectedOrder.currency)}
-                          </p>
-                        </div>
-                      </div>
-                      {selectedOrder.internal_note && (
-                        <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-3 text-sm text-zinc-300">
-                          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                            Nota interna
-                          </p>
-                          <p className="mt-2">{selectedOrder.internal_note}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </ShipmentSummaryPanel>
-              )}
-
-              {detailTab === 'quote' && (
-                <ShipmentQuotePanel>
-                  <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                  <FileText className="h-4 w-4 text-brand" />
-                  Paquete y metodo de cotizacion
-                </div>
-
-                <div className="mt-4 inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
-                  {(
-                    [
-                      { mode: 'auto', label: 'Automatico' },
-                      { mode: 'manual', label: 'Manual' }
-                    ] as Array<{ mode: QuoteMode; label: string }>
-                  ).map((item) => (
-                    <button
-                      key={item.mode}
-                      type="button"
-                      onClick={() => {
-                        resetDebugRequest()
-                        setActiveQuoteMode(item.mode)
-                      }}
-                      className={cn(
-                        'rounded-xl px-4 py-2 text-sm font-semibold transition',
-                        activeQuoteMode === item.mode
-                          ? 'bg-brand text-black'
-                          : 'text-zinc-300 hover:bg-white/5'
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-
-                <p className="mt-3 text-xs text-zinc-500">
-                  {activeQuoteMode === 'auto'
-                    ? 'El modo automatico consulta Envia y conserva solo la opcion valida mas barata para aprobar.'
-                    : 'El modo manual te deja elegir carrier y servicio desde listas reales de Envia. No se aceptan valores libres.'}
-                </p>
-
-                {selectedOrderId && (
-                  <div className="mt-3 inline-flex rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100">
-                    Datos de envio apuntando a: {selectedOrderId}
-                  </div>
-                )}
-
-                {selectedOrder.shipment?.tracking_sync_paused_at && (
-                  <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                    Sync pausado:{' '}
-                    {selectedOrder.shipment.tracking_sync_pause_reason ||
-                      'Reintento manual requerido.'}
-                  </div>
-                )}
-
-                {selectedOrder.shipment?.last_error && hasSelectedCarrierAccountMismatch && (
-                  <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
-                    <p>{selectedOrder.shipment.last_error}</p>
-                    <button
-                      type="button"
-                      onClick={() => void runQuote()}
-                      disabled={
-                        actionLoading ||
-                        (activeQuoteMode === 'manual' && !manualParcelForm.carrier.trim())
-                      }
-                      className="rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold text-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Recotizar ahora
-                    </button>
-                  </div>
-                )}
-                {selectedOrder.shipment?.last_error && hasSelectedApprovalPartialFailure && (
-                  <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                    {selectedOrder.shipment.last_error}
-                  </div>
-                )}
-                {selectedOrder.shipment?.last_error &&
-                  !hasSelectedCarrierAccountMismatch &&
-                  !hasSelectedApprovalPartialFailure &&
-                  !hasSelectedTrackingForbidden && (
-                    <div className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                      {selectedOrder.shipment.last_error}
-                    </div>
-                  )}
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Peso (kg)</span>
-                    <input
-                      value={currentParcelForm.weight_kg}
-                      onChange={(event) =>
-                        updateParcelField(activeQuoteMode, 'weight_kg', event.target.value)
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Largo (cm)</span>
-                    <input
-                      value={currentParcelForm.length_cm}
-                      onChange={(event) =>
-                        updateParcelField(activeQuoteMode, 'length_cm', event.target.value)
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Ancho (cm)</span>
-                    <input
-                      value={currentParcelForm.width_cm}
-                      onChange={(event) =>
-                        updateParcelField(activeQuoteMode, 'width_cm', event.target.value)
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Alto (cm)</span>
-                    <input
-                      value={currentParcelForm.height_cm}
-                      onChange={(event) =>
-                        updateParcelField(activeQuoteMode, 'height_cm', event.target.value)
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  <label className="space-y-2 text-xs text-zinc-400">
-                    <span>Valor declarado (centavos)</span>
-                    <input
-                      value={currentParcelForm.declared_value_cents}
-                      onChange={(event) =>
-                        updateParcelField(
-                          activeQuoteMode,
-                          'declared_value_cents',
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  <label className="space-y-2 text-xs text-zinc-400 sm:col-span-2 xl:col-span-1">
-                    <span>Contenido</span>
-                    <input
-                      value={currentParcelForm.content}
-                      onChange={(event) =>
-                        updateParcelField(activeQuoteMode, 'content', event.target.value)
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                    />
-                  </label>
-                  {activeQuoteMode === 'manual' && (
-                    <>
-                      <label className="space-y-2 text-xs text-zinc-400">
-                        <span>Carrier</span>
-                        <select
-                          value={manualParcelForm.carrier}
-                          onChange={(event) =>
-                            updateParcelField('manual', 'carrier', event.target.value)
-                          }
-                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                        >
-                          <option value="">Selecciona carrier</option>
-                          {manualCarrierOptions.map((carrier) => (
-                            <option key={carrier} value={carrier}>
-                              {carrier}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-xs text-zinc-400">
-                        <span>Servicio</span>
-                        <select
-                          value={manualParcelForm.service}
-                          onChange={(event) =>
-                            updateParcelField('manual', 'service', event.target.value)
-                          }
-                          disabled={!manualParcelForm.carrier.trim()}
-                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <option value="">
-                            {manualParcelForm.carrier.trim()
-                              ? 'Mas barato dentro del carrier'
-                              : 'Primero elige carrier'}
-                          </option>
-                          {manualServiceOptions.map((service) => (
-                            <option key={service} value={service}>
-                              {service}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </>
-                  )}
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                    <label className="space-y-2 text-xs text-zinc-400">
-                      <span>Tipo de caja</span>
-                      <select
-                        value={selectedBoxTypeId}
-                        onChange={(event) => applyBoxTypeSelection(event.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                      >
-                        <option value="">Sin tipo de caja fijo</option>
-                        {activeBoxTypes.map((boxType) => (
-                          <option key={boxType.id} value={boxType.id}>
-                            {boxType.name} ({boxType.max_products} prod / stock {boxType.stock_qty})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {selectedBoxType && (
-                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-300">
-                        <p className="font-semibold text-zinc-100">{selectedBoxType.name}</p>
-                        <p className="mt-1">
-                          Interno: {selectedBoxType.inner_length_cm} x{' '}
-                          {selectedBoxType.inner_width_cm} x {selectedBoxType.inner_height_cm} cm
-                        </p>
-                        <p className="mt-1">
-                          Capacidad: {selectedBoxType.max_products} producto(s) por caja
-                        </p>
-                        <p className="mt-1">Stock actual: {selectedBoxType.stock_qty}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {selectedBoxType && selectedBoxTypeLowStock && (
-                    <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                      Stock bajo: para este plan se requieren al menos {requiredBoxCount} caja(s) y
-                      solo hay {selectedBoxType.stock_qty} registradas. La aprobacion seguira
-                      disponible, pero conviene ajustar inventario o elegir otra caja.
-                    </div>
-                  )}
-                </div>
-
-                {selectedOrder.summary.units_total > 1 && (
-                  <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          Plan de cajas
-                        </p>
-                        <p className="mt-2 text-sm text-zinc-300">
-                          Define cuantas unidades caben por caja. Si el valor es menor al total del
-                          pedido, la app genera multiples guias y te deja editar cada caja por
-                          separado.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <label className="space-y-2 text-xs text-zinc-400">
-                          <span>Productos por caja</span>
-                          <input
-                            value={boxPlanProductsPerBox}
-                            onChange={(event) => updateProductsPerBox(event.target.value)}
-                            className="w-28 rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => regenerateBoxPlanBoxes()}
-                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                        >
-                          Regenerar cajas
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-400">
-                      {isMultiGuidePlan
-                        ? `Se generaran ${boxPlanBoxes.length} guias con base en ${selectedOrder.summary.units_total} unidades.`
-                        : 'Con la configuracion actual, el pedido cabe en una sola guia.'}
-                    </div>
-
-                    {boxPlanHasInvalidDistribution && (
-                      <div className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                        La suma de unidades por caja es {boxPlanUnitsAssigned} y el pedido requiere{' '}
-                        {selectedOrder.summary.units_total}. Ajusta el plan antes de cotizar.
-                      </div>
-                    )}
-
-                    {isMultiGuidePlan && (
-                      <div className="mt-4 space-y-4">
-                        {boxPlanBoxes.map((box) => (
-                          <div
-                            key={box.guide_index}
-                            className="rounded-2xl border border-white/8 bg-black/20 p-4"
-                          >
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  Caja {box.guide_index}
-                                </p>
-                                <p className="mt-1 text-xs text-zinc-500">
-                                  Unidades asignadas a esta guia.
-                                </p>
-                              </div>
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Unidades</span>
-                                <input
-                                  value={box.units_in_box}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'units_in_box',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-24 rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                            </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Peso (kg)</span>
-                                <input
-                                  value={box.weight_kg}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'weight_kg',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Largo (cm)</span>
-                                <input
-                                  value={box.length_cm}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'length_cm',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Ancho (cm)</span>
-                                <input
-                                  value={box.width_cm}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'width_cm',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Alto (cm)</span>
-                                <input
-                                  value={box.height_cm}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'height_cm',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-2 text-xs text-zinc-400">
-                                <span>Valor declarado (centavos)</span>
-                                <input
-                                  value={box.declared_value_cents}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'declared_value_cents',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-2 text-xs text-zinc-400 sm:col-span-2 xl:col-span-2">
-                                <span>Contenido</span>
-                                <input
-                                  value={box.content}
-                                  onChange={(event) =>
-                                    updateBoxPlanBoxField(
-                                      box.guide_index,
-                                      'content',
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
-                                />
-                              </label>
-                            </div>
-                            <label className="mt-3 block space-y-2 text-xs text-zinc-400">
-                              <span>Notas de esta caja</span>
-                              <textarea
-                                rows={2}
-                                value={box.notes}
-                                onChange={(event) =>
-                                  updateBoxPlanBoxField(
-                                    box.guide_index,
-                                    'notes',
-                                    event.target.value
-                                  )
-                                }
-                                className="w-full rounded-2xl border border-white/10 bg-surface100 px-3 py-3 text-sm text-zinc-100 outline-none"
-                              />
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-3 space-y-2 text-xs text-zinc-500">
-                  {activeQuoteMode === 'auto' ? (
-                    <p>
-                      Al cotizar en automatico se elige directamente la opcion valida mas barata.
-                    </p>
-                  ) : (
-                    <>
-                      <p>Carrier es obligatorio en modo manual. Servicio es opcional.</p>
-                      <p>
-                        Si dejas servicio vacio, se elige el servicio mas barato dentro del carrier
-                        seleccionado.
+              ) : (
+                <div className="space-y-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                        Detalle
                       </p>
-                    </>
-                  )}
-                  {isMultiGuidePlan && (
-                    <p>
-                      Cuando el plan de cajas esta activo, los campos superiores funcionan como
-                      plantilla. Usa `Regenerar cajas` si quieres propagar esos cambios a todas las
-                      guias.
-                    </p>
-                  )}
-                </div>
-
-                {currentQuoteInvalidated && (
-                  <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                    Cambiaste datos del paquete o del plan de cajas. Vuelve a cotizar antes de
-                    aprobar.
-                  </div>
-                )}
-
-                {activeQuoteMode === 'manual' &&
-                  (availableCarriers.length > 0 || availableServices.length > 0) && (
-                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Carriers disponibles
-                        </p>
-                        <p className="mt-2 text-sm text-zinc-300">
-                          {availableCarriers.length > 0
-                            ? availableCarriers.join(', ')
-                            : 'Envia no devolvio carriers para MX.'}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Servicios disponibles
-                        </p>
-                        <p className="mt-2 text-sm text-zinc-300">
-                          {availableServices.length > 0
-                            ? availableServices.join(', ')
-                            : 'Selecciona un carrier o cotiza para ver servicios.'}
-                        </p>
-                      </div>
+                      <h3 className="mt-1 text-xl font-semibold text-zinc-100">
+                        {selectedOrder.id}
+                      </h3>
+                      <p className="mt-2 text-sm text-zinc-400">
+                        {selectedOrder.customer_name || selectedOrder.customer_email}
+                      </p>
                     </div>
-                  )}
-
-                <label className="mt-3 block space-y-2 text-xs text-zinc-400">
-                  <span>Notas operativas</span>
-                  <textarea
-                    value={currentParcelForm.notes}
-                    rows={3}
-                    onChange={(event) =>
-                      activeQuoteMode === 'auto'
-                        ? setAutoParcelForm((current) => ({
-                            ...current,
-                            notes: event.target.value
-                          }))
-                        : setManualParcelForm((current) => ({
-                            ...current,
-                            notes: event.target.value
-                          }))
-                    }
-                    className="w-full rounded-2xl border border-white/10 bg-surface100 px-3 py-3 text-sm text-zinc-100 outline-none"
-                  />
-                </label>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void runQuote()}
-                    disabled={
-                      actionLoading ||
-                      boxPlanHasInvalidDistribution ||
-                      (activeQuoteMode === 'manual' && !manualParcelForm.carrier.trim())
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <RefreshCw className={cn('h-4 w-4', actionLoading && 'animate-spin')} />
-                    {activeQuoteMode === 'auto' ? 'Cotizar automatico' : 'Cotizar manualmente'}
-                  </button>
-                  {isPendingSelection && (
-                    <button
-                      type="button"
-                      onClick={() => void previewApproveRequest()}
-                      disabled={
-                        debugLoading || !canApproveSelection || boxPlanHasInvalidDistribution
-                      }
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500/15 px-4 py-2.5 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <FileText className={cn('h-4 w-4', debugLoading && 'animate-spin')} />
-                      Ver la peticion
-                    </button>
-                  )}
-                  {isPendingSelection && (
-                    <button
-                      type="button"
-                      onClick={() => setShowApproveConfirm(true)}
-                      disabled={
-                        actionLoading || !canApproveSelection || boxPlanHasInvalidDistribution
-                      }
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      Confirmar guia
-                    </button>
-                  )}
-                  {isApprovedSelection && (
-                    <button
-                      type="button"
-                      onClick={() => void remoteRefreshShipment()}
-                      disabled={actionLoading || remoteRefreshLoading}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw
-                        className={cn('h-4 w-4', remoteRefreshLoading && 'animate-spin')}
-                      />
-                      Refresh Envia
-                    </button>
-                  )}
-                  {isApprovedSelection &&
-                    currentGuides.some((guide) => guide.remote_cancelable) && (
-                      <button
-                        type="button"
-                        onClick={() => void cancelAllGuides()}
-                        disabled={actionLoading}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={cn(
+                          'rounded-full border px-3 py-1.5 text-xs font-semibold',
+                          approvalClass(selectedOrder.shipment?.approval_status || 'pending')
+                        )}
                       >
-                        <XCircle className="h-4 w-4" />
-                        Cancelar todas
-                      </button>
-                    )}
-                </div>
-
-                {isPendingSelection && !currentSelectedQuote && (
-                  <p className="mt-3 text-xs text-zinc-500">
-                    {activeQuoteMode === 'auto'
-                      ? 'Cotiza automaticamente para fijar la mejor opcion antes de confirmar la guia.'
-                      : 'Cotiza y elige una opcion valida antes de confirmar la guia.'}
-                  </p>
-                )}
-
-                {currentSelectedQuote && (
-                  <div className="mt-4 rounded-2xl border border-brand/20 bg-brand/10 p-3 text-sm text-zinc-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-brand/80">
-                      {activeQuoteMode === 'auto'
-                        ? 'Mejor opcion seleccionada automaticamente'
-                        : 'Opcion seleccionada para aprobar'}
-                    </p>
-                    <p className="mt-2 font-semibold">
-                      {currentSelectedQuote.carrier} / {currentSelectedQuote.service}
-                    </p>
-                    <p className="mt-1 text-brand">
-                      {formatMoney(
-                        currentSelectedQuote.amount_cents,
-                        currentSelectedQuote.currency
-                      )}
-                    </p>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      {isMultiGuidePlan
-                        ? `Total agregado para ${boxPlanBoxes.length} guias.`
-                        : 'Total para una sola guia.'}
-                    </p>
-                  </div>
-                )}
-
-                {showDebugRequest && (
-                  <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.18em] text-amber-200/80">
-                          Preview de la peticion
-                        </p>
-                        <p className="mt-1 text-sm text-amber-50">
-                          Estos son los payloads finales que el worker enviaria a `ship/generate`.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowDebugRequest(false)}
-                        className="rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold text-amber-100"
+                        {approvalLabel(selectedOrder.shipment?.approval_status || 'pending')}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded-full border px-3 py-1.5 text-xs font-semibold',
+                          statusClass(selectedOrder.shipment?.shipment_status || 'pending')
+                        )}
                       >
-                        Ocultar
-                      </button>
+                        {statusLabel(selectedOrder.shipment?.shipment_status || 'pending')}
+                      </span>
                     </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-4">
-                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Fuente settings
-                        </p>
-                        <p className="mt-2 font-semibold">
-                          {debugRequestSettingsSource === 'provider'
-                            ? 'provider'
-                            : debugRequestSettingsSource === 'fallback'
-                              ? 'fallback'
-                              : 'sin dato'}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Shipment.type
-                        </p>
-                        <p className="mt-2 font-semibold">
-                          {debugRequestShipmentType == null ? 'sin dato' : debugRequestShipmentType}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Guias
-                        </p>
-                        <p className="mt-2 font-semibold">
-                          {debugRequestGuideCount == null ? 'sin dato' : debugRequestGuideCount}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Campos faltantes
-                        </p>
-                        <p className="mt-2 font-semibold">
-                          {debugRequestMissingFields.length === 0
-                            ? 'ninguno'
-                            : String(debugRequestMissingFields.length)}
-                        </p>
-                      </div>
-                    </div>
-                    {debugRequestWarning && (
-                      <div className="mt-3 rounded-2xl border border-amber-300/20 bg-black/20 px-4 py-3 text-sm text-amber-100">
-                        {debugRequestWarning}
-                      </div>
-                    )}
-                    {debugRequestSettingsSource === 'fallback' && (
-                      <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-                        Aviso: el worker uso fallback local `PDF / STOCK_4X6 / thermal`. Esto no
-                        implica un error por si mismo; el Quickstart de Envia documenta `settings`
-                        como opcional para `ship/generate`.
-                      </div>
-                    )}
-                    {debugRequestMissingFields.length > 0 && (
-                      <div className="mt-3 rounded-2xl border border-rose-300/20 bg-black/20 px-4 py-3 text-sm text-rose-100">
-                        Campos faltantes detectados: {debugRequestMissingFields.join(', ')}
-                      </div>
-                    )}
-                    <pre className="mt-3 max-h-[28rem] overflow-auto rounded-2xl border border-white/8 bg-black/30 p-4 text-xs text-zinc-200">
-                      {debugRequestPayload}
-                    </pre>
                   </div>
-                )}
 
-                {activeQuoteMode === 'manual' && currentQuotes.length > 0 && (
-                  <div className="mt-4 space-y-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Cotizaciones sugeridas
-                    </p>
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {currentQuotes.map((quote) => {
-                        const active =
-                          currentSelectedQuote?.carrier === quote.carrier &&
-                          currentSelectedQuote?.service === quote.service &&
-                          currentSelectedQuote?.amount_cents === quote.amount_cents
-                        return (
-                          <button
-                            key={`${quote.carrier}-${quote.service}-${quote.amount_cents}`}
-                            type="button"
-                            onClick={() => chooseQuote('manual', quote)}
-                            className={cn(
-                              'rounded-2xl border p-3 text-left',
-                              active
-                                ? 'border-brand/40 bg-brand/10'
-                                : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                  <div className="overflow-x-auto pb-1">
+                    <div className="inline-flex min-w-max rounded-2xl border border-white/10 bg-black/30 p-1">
+                      {detailTabs.map((tab) => (
+                        <button
+                          key={tab.value}
+                          type="button"
+                          onClick={() => setDetailTab(tab.value)}
+                          className={cn(
+                            'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                            detailTab === tab.value
+                              ? 'bg-brand text-black'
+                              : 'text-zinc-300 hover:bg-white/5'
+                          )}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {detailTab === 'summary' && (
+                    <ShipmentSummaryPanel>
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                            <MapPin className="h-4 w-4 text-brand" />
+                            Destino
+                          </div>
+                          <div className="mt-3 space-y-2 text-sm text-zinc-300">
+                            <p>{selectedOrder.customer_name || 'Cliente sin nombre'}</p>
+                            <p>{selectedOrder.customer_email}</p>
+                            {selectedOrder.customer_phone && <p>{selectedOrder.customer_phone}</p>}
+                            {addressLines.map((line) => (
+                              <p key={line}>{line}</p>
+                            ))}
+                          </div>
+                          <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-3 text-xs text-zinc-400">
+                            <p className="font-semibold text-zinc-200">Validacion de CP</p>
+                            <p className="mt-2">
+                              Resultado:{' '}
+                              <span
+                                className={cn(
+                                  zipValidation.deliverable === true && 'text-emerald-300',
+                                  zipValidation.deliverable === false && 'text-rose-300',
+                                  zipValidation.deliverable === null && 'text-zinc-300'
+                                )}
+                              >
+                                {zipValidation.deliverable === true
+                                  ? 'Enviable'
+                                  : zipValidation.deliverable === false
+                                    ? 'No enviable'
+                                    : 'Sin dato'}
+                              </span>
+                            </p>
+                            {(zipValidation.city || zipValidation.state || zipValidation.zip) && (
+                              <p className="mt-1">
+                                {zipValidation.city || '-'} / {zipValidation.state || '-'} /{' '}
+                                {zipValidation.zip || '-'}
+                              </p>
                             )}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  {quote.carrier}
-                                </p>
-                                <p className="mt-1 text-xs text-zinc-400">{quote.service}</p>
-                              </div>
-                              <p className="text-sm font-semibold text-brand">
-                                {formatMoney(quote.amount_cents, quote.currency)}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                            <Package className="h-4 w-4 text-brand" />
+                            Resumen comercial
+                          </div>
+                          <div className="mt-3 grid gap-3 text-sm text-zinc-300 sm:grid-cols-2">
+                            <div>
+                              <p className="text-zinc-500">Unidades</p>
+                              <p className="mt-1 font-semibold text-zinc-100">
+                                {selectedOrder.summary.units_total}
                               </p>
                             </div>
-                            <p className="mt-2 text-xs text-zinc-500">
-                              {quote.estimated_days == null
-                                ? 'Sin estimado'
-                                : `${quote.estimated_days} dia(s) estimados`}
-                            </p>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                  </div>
-
-                  {isPendingSelection && (
-                    <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4">
-                      <p className="text-sm font-semibold text-rose-100">Rechazar envio</p>
-                      <textarea
-                        value={rejectReason}
-                        rows={3}
-                        onChange={(event) => setRejectReason(event.target.value)}
-                        placeholder="Motivo obligatorio del rechazo"
-                        className="mt-3 w-full rounded-2xl border border-rose-400/20 bg-black/20 px-3 py-3 text-sm text-rose-50 outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void rejectShipment()}
-                        disabled={actionLoading}
-                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Rechazar pedido
-                      </button>
-                    </div>
-                  )}
-                </ShipmentQuotePanel>
-              )}
-
-              {detailTab === 'guides' && (
-                <ShipmentGuidesPanel>
-                  {selectedOrder.shipment ? (
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-zinc-300">
-                        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          Envio actual
-                        </p>
-                        <p className="mt-2">Carrier: {selectedOrder.shipment.carrier || 'Pendiente'}</p>
-                        <p className="mt-1">
-                          Servicio: {selectedOrder.shipment.service || 'Pendiente'}
-                        </p>
-                        <p className="mt-1">
-                          Cotizacion:{' '}
-                          {selectedOrder.shipment.quote_amount_cents == null
-                            ? 'Sin cotizar'
-                            : formatMoney(
-                                selectedOrder.shipment.quote_amount_cents,
-                                selectedOrder.shipment.currency
-                              )}
-                        </p>
-                        <p className="mt-1">Ultimo sync: {formatDate(selectedOrder.shipment.last_sync_at)}</p>
-                        {selectedOrder.shipment.remote_status_text && (
-                          <p className="mt-1">
-                            Estado remoto: {selectedOrder.shipment.remote_status_text}
-                          </p>
-                        )}
-                        {selectedOrder.shipment.box_type?.box_type_name && (
-                          <p className="mt-1">Caja: {selectedOrder.shipment.box_type.box_type_name}</p>
-                        )}
-                        {selectedOrder.shipment.tracking_sync_paused_at && (
-                          <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                            Sync pausado:{' '}
-                            {selectedOrder.shipment.tracking_sync_pause_reason ||
-                              'Reintento manual requerido.'}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-zinc-300">
-                        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Documentos</p>
-                        <p className="mt-2">Guias: {currentGuides.length || 0}</p>
-                        <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
-                          {currentGuides.length === 0 ? (
-                            <p className="text-xs text-zinc-500">Aun no hay guias generadas.</p>
-                          ) : (
-                            currentGuides.map((guide) => {
-                              const localFile = getLocalGuideFile(guide)
-                              return (
-                                <div
-                                  key={guide.guide_index}
-                                  className="rounded-2xl border border-white/8 bg-black/20 p-3"
-                                >
-                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                      <p className="font-semibold text-zinc-100">
-                                        Guia {guide.guide_index}: {guide.tracking_number || 'Sin tracking'}
-                                      </p>
-                                      <p className="mt-1 text-xs text-zinc-500">
-                                        {guide.carrier || 'Carrier pendiente'} /{' '}
-                                        {guide.service || 'Servicio pendiente'}
-                                      </p>
-                                      <div className="mt-2 flex flex-wrap gap-2">
-                                        <span
-                                          className={cn(
-                                            'rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-                                            statusClass(guide.shipment_status)
-                                          )}
-                                        >
-                                          {statusLabel(guide.shipment_status)}
-                                        </span>
-                                        {guide.remote_cancelable && (
-                                          <span className="rounded-full border border-sky-400/25 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
-                                            Cancelable en Envia
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {localFile?.exists && (
-                                        <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
-                                          PDF local listo
-                                        </span>
-                                      )}
-                                      {guide.box_type?.box_type_name && (
-                                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200">
-                                          {guide.box_type.box_type_name}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {(guide.remote_status_text ||
-                                    guide.remote_checked_at ||
-                                    guide.box_type?.box_type_code) && (
-                                    <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
-                                      {guide.remote_status_text && (
-                                        <p>Estado remoto: {guide.remote_status_text}</p>
-                                      )}
-                                      {guide.remote_checked_at && (
-                                        <p className="mt-1">
-                                          Ultima consulta Envia: {formatDate(guide.remote_checked_at)}
-                                        </p>
-                                      )}
-                                      {guide.box_type?.box_type_code && (
-                                        <p className="mt-1">Caja: {guide.box_type.box_type_code}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {guide.label_url && (
-                                      <a
-                                        href={
-                                          guide.label_r2_key
-                                            ? `/api/assets/${encodeURIComponent(guide.label_r2_key)}?download=1`
-                                            : guide.label_url
-                                        }
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        download
-                                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                      >
-                                        Descargar etiqueta
-                                      </a>
-                                    )}
-                                    {guide.tracking_url && (
-                                      <a
-                                        href={guide.tracking_url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                      >
-                                        Abrir tracking
-                                      </a>
-                                    )}
-                                    {guide.label_url && !hasDesktopApi() && (
-                                      <div className="w-full rounded-xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
-                                        Impresion y gestion local de PDF requieren la app de escritorio.
-                                      </div>
-                                    )}
-                                    {hasDesktopApi() && guide.label_url && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void previewGuidePdf(guide).catch((error) =>
-                                              setMsg({
-                                                type: 'error',
-                                                text:
-                                                  error instanceof Error
-                                                    ? error.message
-                                                    : 'No se pudo abrir la vista previa.'
-                                              })
-                                            )
-                                          }
-                                          className="rounded-xl bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-500/20"
-                                        >
-                                          Ver PDF
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void openGuidePdfFile(guide).catch((error) =>
-                                              setMsg({
-                                                type: 'error',
-                                                text:
-                                                  error instanceof Error
-                                                    ? error.message
-                                                    : 'No se pudo abrir el archivo.'
-                                              })
-                                            )
-                                          }
-                                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                        >
-                                          <ExternalLink className="h-3.5 w-3.5" />
-                                          Abrir archivo
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void printGuidePdf(guide).catch((error) =>
-                                              setMsg({
-                                                type: 'error',
-                                                text:
-                                                  error instanceof Error
-                                                    ? error.message
-                                                    : 'No se pudo imprimir la guia.'
-                                              })
-                                            )
-                                          }
-                                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                        >
-                                          Imprimir
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void showGuideInFolder(guide).catch((error) =>
-                                              setMsg({
-                                                type: 'error',
-                                                text:
-                                                  error instanceof Error
-                                                    ? error.message
-                                                    : 'No se pudo abrir la carpeta.'
-                                              })
-                                            )
-                                          }
-                                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                        >
-                                          Abrir carpeta
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void copyGuidePdfPath(guide)
-                                              .then(() =>
-                                                setMsg({
-                                                  type: 'success',
-                                                  text: 'Ruta local copiada al portapapeles.'
-                                                })
-                                              )
-                                              .catch((error) =>
-                                                setMsg({
-                                                  type: 'error',
-                                                  text:
-                                                    error instanceof Error
-                                                      ? error.message
-                                                      : 'No se pudo copiar la ruta.'
-                                                })
-                                              )
-                                          }
-                                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                        >
-                                          <Copy className="h-3.5 w-3.5" />
-                                          Copiar ruta
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void showGuideInFolder(guide, true).catch((error) =>
-                                              setMsg({
-                                                type: 'error',
-                                                text:
-                                                  error instanceof Error
-                                                    ? error.message
-                                                    : 'No se pudo guardar la guia local.'
-                                              })
-                                            )
-                                          }
-                                          className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
-                                        >
-                                          Guardar de nuevo
-                                        </button>
-                                      </>
-                                    )}
-                                    {guide.remote_cancelable &&
-                                      guide.shipment_status !== 'cancelled' &&
-                                      guide.shipment_status !== 'delivered' &&
-                                      guide.shipment_status !== 'lost' && (
-                                        <button
-                                          type="button"
-                                          onClick={() => void cancelGuide(guide)}
-                                          disabled={actionLoading}
-                                          className="inline-flex items-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                          <XCircle className="h-3.5 w-3.5" />
-                                          Cancelar guia
-                                        </button>
-                                      )}
-                                  </div>
-                                </div>
-                              )
-                            })
+                            <div>
+                              <p className="text-zinc-500">Items</p>
+                              <p className="mt-1 font-semibold text-zinc-100">
+                                {selectedOrder.summary.items_count}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-500">Subtotal</p>
+                              <p className="mt-1 font-semibold text-zinc-100">
+                                {formatMoney(
+                                  selectedOrder.summary.subtotal_cents,
+                                  selectedOrder.currency
+                                )}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-500">Total</p>
+                              <p className="mt-1 font-semibold text-zinc-100">
+                                {formatMoney(
+                                  selectedOrder.total_amount_cents,
+                                  selectedOrder.currency
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          {selectedOrder.internal_note && (
+                            <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-3 text-sm text-zinc-300">
+                              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                                Nota interna
+                              </p>
+                              <p className="mt-2">{selectedOrder.internal_note}</p>
+                            </div>
                           )}
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-sm text-zinc-400">
-                      Aun no existe un registro de envio para este pedido.
-                    </div>
+                    </ShipmentSummaryPanel>
                   )}
-                </ShipmentGuidesPanel>
-              )}
 
-              {detailTab === 'activity' && (
-                <ShipmentActivityPanel>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                      <p className="text-sm font-semibold text-zinc-100">Items del pedido</p>
-                      <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
-                        {selectedOrder.items.map((item) => (
-                          <div
-                            key={item.id}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3 text-sm"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-zinc-100">
-                                {item.product_title || item.product_slug}
-                              </p>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                {item.quantity} x{' '}
-                                {formatMoney(item.unit_price_cents, selectedOrder.currency)}
-                              </p>
-                            </div>
-                            <p className="font-semibold text-zinc-100">
-                              {formatMoney(item.amount_cents, selectedOrder.currency)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  {detailTab === 'quote' && (
+                    <ShipmentQuotePanel>
+                      <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                          <FileText className="h-4 w-4 text-brand" />
+                          Paquete y metodo de cotizacion
+                        </div>
 
-                    <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                      <p className="text-sm font-semibold text-zinc-100">Bitacora de envio</p>
-                      <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
-                        {selectedOrder.shipment_events.length === 0 ? (
-                          <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-4 text-sm text-zinc-500">
-                            Aun no hay eventos registrados.
-                          </div>
-                        ) : (
-                          selectedOrder.shipment_events.map((event) => (
-                            <div
-                              key={event.id}
-                              className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3"
+                        <div className="mt-4 inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
+                          {(
+                            [
+                              { mode: 'auto', label: 'Automatico' },
+                              { mode: 'manual', label: 'Manual' }
+                            ] as Array<{ mode: QuoteMode; label: string }>
+                          ).map((item) => (
+                            <button
+                              key={item.mode}
+                              type="button"
+                              onClick={() => {
+                                resetDebugRequest()
+                                setActiveQuoteMode(item.mode)
+                              }}
+                              className={cn(
+                                'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                                activeQuoteMode === item.mode
+                                  ? 'bg-brand text-black'
+                                  : 'text-zinc-300 hover:bg-white/5'
+                              )}
                             >
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm font-semibold text-zinc-100">
-                                  {event.event_type}
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <p className="mt-3 text-xs text-zinc-500">
+                          {activeQuoteMode === 'auto'
+                            ? 'El modo automatico consulta Envia y conserva solo la opcion valida mas barata para aprobar.'
+                            : 'El modo manual te deja elegir carrier y servicio desde listas reales de Envia. No se aceptan valores libres.'}
+                        </p>
+
+                        {selectedOrderId && (
+                          <div className="mt-3 inline-flex rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100">
+                            Datos de envio apuntando a: {selectedOrderId}
+                          </div>
+                        )}
+
+                        {selectedOrder.shipment?.tracking_sync_paused_at && (
+                          <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                            Sync pausado:{' '}
+                            {selectedOrder.shipment.tracking_sync_pause_reason ||
+                              'Reintento manual requerido.'}
+                          </div>
+                        )}
+
+                        {selectedOrder.shipment?.last_error &&
+                          hasSelectedCarrierAccountMismatch && (
+                            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+                              <p>{selectedOrder.shipment.last_error}</p>
+                              <button
+                                type="button"
+                                onClick={() => void runQuote()}
+                                disabled={
+                                  actionLoading ||
+                                  (activeQuoteMode === 'manual' && !manualParcelForm.carrier.trim())
+                                }
+                                className="rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold text-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Recotizar ahora
+                              </button>
+                            </div>
+                          )}
+                        {selectedOrder.shipment?.last_error &&
+                          hasSelectedApprovalPartialFailure && (
+                            <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                              {selectedOrder.shipment.last_error}
+                            </div>
+                          )}
+                        {selectedOrder.shipment?.last_error &&
+                          !hasSelectedCarrierAccountMismatch &&
+                          !hasSelectedApprovalPartialFailure &&
+                          !hasSelectedTrackingForbidden && (
+                            <div className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                              {selectedOrder.shipment.last_error}
+                            </div>
+                          )}
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <label className="space-y-2 text-xs text-zinc-400">
+                            <span>Peso (kg)</span>
+                            <input
+                              value={currentParcelForm.weight_kg}
+                              onChange={(event) =>
+                                updateParcelField(activeQuoteMode, 'weight_kg', event.target.value)
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          <label className="space-y-2 text-xs text-zinc-400">
+                            <span>Largo (cm)</span>
+                            <input
+                              value={currentParcelForm.length_cm}
+                              onChange={(event) =>
+                                updateParcelField(activeQuoteMode, 'length_cm', event.target.value)
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          <label className="space-y-2 text-xs text-zinc-400">
+                            <span>Ancho (cm)</span>
+                            <input
+                              value={currentParcelForm.width_cm}
+                              onChange={(event) =>
+                                updateParcelField(activeQuoteMode, 'width_cm', event.target.value)
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          <label className="space-y-2 text-xs text-zinc-400">
+                            <span>Alto (cm)</span>
+                            <input
+                              value={currentParcelForm.height_cm}
+                              onChange={(event) =>
+                                updateParcelField(activeQuoteMode, 'height_cm', event.target.value)
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          <label className="space-y-2 text-xs text-zinc-400">
+                            <span>Valor declarado (centavos)</span>
+                            <input
+                              value={currentParcelForm.declared_value_cents}
+                              onChange={(event) =>
+                                updateParcelField(
+                                  activeQuoteMode,
+                                  'declared_value_cents',
+                                  event.target.value
+                                )
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          <label className="space-y-2 text-xs text-zinc-400 sm:col-span-2 xl:col-span-1">
+                            <span>Contenido</span>
+                            <input
+                              value={currentParcelForm.content}
+                              onChange={(event) =>
+                                updateParcelField(activeQuoteMode, 'content', event.target.value)
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                            />
+                          </label>
+                          {activeQuoteMode === 'manual' && (
+                            <>
+                              <label className="space-y-2 text-xs text-zinc-400">
+                                <span>Carrier</span>
+                                <select
+                                  value={manualParcelForm.carrier}
+                                  onChange={(event) =>
+                                    updateParcelField('manual', 'carrier', event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                >
+                                  <option value="">Selecciona carrier</option>
+                                  {manualCarrierOptions.map((carrier) => (
+                                    <option key={carrier} value={carrier}>
+                                      {carrier}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="space-y-2 text-xs text-zinc-400">
+                                <span>Servicio</span>
+                                <select
+                                  value={manualParcelForm.service}
+                                  onChange={(event) =>
+                                    updateParcelField('manual', 'service', event.target.value)
+                                  }
+                                  disabled={!manualParcelForm.carrier.trim()}
+                                  className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <option value="">
+                                    {manualParcelForm.carrier.trim()
+                                      ? 'Mas barato dentro del carrier'
+                                      : 'Primero elige carrier'}
+                                  </option>
+                                  {manualServiceOptions.map((service) => (
+                                    <option key={service} value={service}>
+                                      {service}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                            <label className="space-y-2 text-xs text-zinc-400">
+                              <span>Tipo de caja</span>
+                              <select
+                                value={selectedBoxTypeId}
+                                onChange={(event) => applyBoxTypeSelection(event.target.value)}
+                                className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                              >
+                                <option value="">Sin tipo de caja fijo</option>
+                                {activeBoxTypes.map((boxType) => (
+                                  <option key={boxType.id} value={boxType.id}>
+                                    {boxType.name} ({boxType.max_products} prod / stock{' '}
+                                    {boxType.stock_qty})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {selectedBoxType && (
+                              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-300">
+                                <p className="font-semibold text-zinc-100">
+                                  {selectedBoxType.name}
                                 </p>
-                                <p className="text-xs text-zinc-500">
-                                  {formatDate(event.created_at)}
+                                <p className="mt-1">
+                                  Interno: {selectedBoxType.inner_length_cm} x{' '}
+                                  {selectedBoxType.inner_width_cm} x{' '}
+                                  {selectedBoxType.inner_height_cm} cm
+                                </p>
+                                <p className="mt-1">
+                                  Capacidad: {selectedBoxType.max_products} producto(s) por caja
+                                </p>
+                                <p className="mt-1">Stock actual: {selectedBoxType.stock_qty}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {selectedBoxType && selectedBoxTypeLowStock && (
+                            <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                              Stock bajo: para este plan se requieren al menos {requiredBoxCount}{' '}
+                              caja(s) y solo hay {selectedBoxType.stock_qty} registradas. La
+                              aprobacion seguira disponible, pero conviene ajustar inventario o
+                              elegir otra caja.
+                            </div>
+                          )}
+                        </div>
+
+                        {selectedOrder.summary.units_total > 1 && (
+                          <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                                  Plan de cajas
+                                </p>
+                                <p className="mt-2 text-sm text-zinc-300">
+                                  Define cuantas unidades caben por caja. Si el valor es menor al
+                                  total del pedido, la app genera multiples guias y te deja editar
+                                  cada caja por separado.
                                 </p>
                               </div>
-                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                                {event.source}
-                              </p>
+                              <div className="flex gap-2">
+                                <label className="space-y-2 text-xs text-zinc-400">
+                                  <span>Productos por caja</span>
+                                  <input
+                                    value={boxPlanProductsPerBox}
+                                    onChange={(event) => updateProductsPerBox(event.target.value)}
+                                    className="w-28 rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => regenerateBoxPlanBoxes()}
+                                  className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                >
+                                  Regenerar cajas
+                                </button>
+                              </div>
                             </div>
-                          ))
+
+                            <div className="mt-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-xs text-zinc-400">
+                              {isMultiGuidePlan
+                                ? `Se generaran ${boxPlanBoxes.length} guias con base en ${selectedOrder.summary.units_total} unidades.`
+                                : 'Con la configuracion actual, el pedido cabe en una sola guia.'}
+                            </div>
+
+                            {boxPlanHasInvalidDistribution && (
+                              <div className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                                La suma de unidades por caja es {boxPlanUnitsAssigned} y el pedido
+                                requiere {selectedOrder.summary.units_total}. Ajusta el plan antes
+                                de cotizar.
+                              </div>
+                            )}
+
+                            {isMultiGuidePlan && (
+                              <div className="mt-4 space-y-4">
+                                {boxPlanBoxes.map((box) => (
+                                  <div
+                                    key={box.guide_index}
+                                    className="rounded-2xl border border-white/8 bg-black/20 p-4"
+                                  >
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <div>
+                                        <p className="text-sm font-semibold text-zinc-100">
+                                          Caja {box.guide_index}
+                                        </p>
+                                        <p className="mt-1 text-xs text-zinc-500">
+                                          Unidades asignadas a esta guia.
+                                        </p>
+                                      </div>
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Unidades</span>
+                                        <input
+                                          value={box.units_in_box}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'units_in_box',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-24 rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                    </div>
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Peso (kg)</span>
+                                        <input
+                                          value={box.weight_kg}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'weight_kg',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Largo (cm)</span>
+                                        <input
+                                          value={box.length_cm}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'length_cm',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Ancho (cm)</span>
+                                        <input
+                                          value={box.width_cm}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'width_cm',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Alto (cm)</span>
+                                        <input
+                                          value={box.height_cm}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'height_cm',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-xs text-zinc-400">
+                                        <span>Valor declarado (centavos)</span>
+                                        <input
+                                          value={box.declared_value_cents}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'declared_value_cents',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                      <label className="space-y-2 text-xs text-zinc-400 sm:col-span-2 xl:col-span-2">
+                                        <span>Contenido</span>
+                                        <input
+                                          value={box.content}
+                                          onChange={(event) =>
+                                            updateBoxPlanBoxField(
+                                              box.guide_index,
+                                              'content',
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm text-zinc-100 outline-none"
+                                        />
+                                      </label>
+                                    </div>
+                                    <label className="mt-3 block space-y-2 text-xs text-zinc-400">
+                                      <span>Notas de esta caja</span>
+                                      <textarea
+                                        rows={2}
+                                        value={box.notes}
+                                        onChange={(event) =>
+                                          updateBoxPlanBoxField(
+                                            box.guide_index,
+                                            'notes',
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-2xl border border-white/10 bg-surface100 px-3 py-3 text-sm text-zinc-100 outline-none"
+                                      />
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-3 space-y-2 text-xs text-zinc-500">
+                          {activeQuoteMode === 'auto' ? (
+                            <p>
+                              Al cotizar en automatico se elige directamente la opcion valida mas
+                              barata.
+                            </p>
+                          ) : (
+                            <>
+                              <p>Carrier es obligatorio en modo manual. Servicio es opcional.</p>
+                              <p>
+                                Si dejas servicio vacio, se elige el servicio mas barato dentro del
+                                carrier seleccionado.
+                              </p>
+                            </>
+                          )}
+                          {isMultiGuidePlan && (
+                            <p>
+                              Cuando el plan de cajas esta activo, los campos superiores funcionan
+                              como plantilla. Usa `Regenerar cajas` si quieres propagar esos cambios
+                              a todas las guias.
+                            </p>
+                          )}
+                        </div>
+
+                        {currentQuoteInvalidated && (
+                          <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                            Cambiaste datos del paquete o del plan de cajas. Vuelve a cotizar antes
+                            de aprobar.
+                          </div>
+                        )}
+
+                        {activeQuoteMode === 'manual' &&
+                          (availableCarriers.length > 0 || availableServices.length > 0) && (
+                            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                              <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Carriers disponibles
+                                </p>
+                                <p className="mt-2 text-sm text-zinc-300">
+                                  {availableCarriers.length > 0
+                                    ? availableCarriers.join(', ')
+                                    : 'Envia no devolvio carriers para MX.'}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Servicios disponibles
+                                </p>
+                                <p className="mt-2 text-sm text-zinc-300">
+                                  {availableServices.length > 0
+                                    ? availableServices.join(', ')
+                                    : 'Selecciona un carrier o cotiza para ver servicios.'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                        <label className="mt-3 block space-y-2 text-xs text-zinc-400">
+                          <span>Notas operativas</span>
+                          <textarea
+                            value={currentParcelForm.notes}
+                            rows={3}
+                            onChange={(event) =>
+                              activeQuoteMode === 'auto'
+                                ? setAutoParcelForm((current) => ({
+                                    ...current,
+                                    notes: event.target.value
+                                  }))
+                                : setManualParcelForm((current) => ({
+                                    ...current,
+                                    notes: event.target.value
+                                  }))
+                            }
+                            className="w-full rounded-2xl border border-white/10 bg-surface100 px-3 py-3 text-sm text-zinc-100 outline-none"
+                          />
+                        </label>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void runQuote()}
+                            disabled={
+                              actionLoading ||
+                              boxPlanHasInvalidDistribution ||
+                              (activeQuoteMode === 'manual' && !manualParcelForm.carrier.trim())
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <RefreshCw className={cn('h-4 w-4', actionLoading && 'animate-spin')} />
+                            {activeQuoteMode === 'auto'
+                              ? 'Cotizar automatico'
+                              : 'Cotizar manualmente'}
+                          </button>
+                          {isPendingSelection && (
+                            <button
+                              type="button"
+                              onClick={() => void previewApproveRequest()}
+                              disabled={
+                                debugLoading ||
+                                !canApproveSelection ||
+                                boxPlanHasInvalidDistribution
+                              }
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500/15 px-4 py-2.5 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <FileText className={cn('h-4 w-4', debugLoading && 'animate-spin')} />
+                              Ver la peticion
+                            </button>
+                          )}
+                          {isPendingSelection && (
+                            <button
+                              type="button"
+                              onClick={() => setShowApproveConfirm(true)}
+                              disabled={
+                                actionLoading ||
+                                !canApproveSelection ||
+                                boxPlanHasInvalidDistribution
+                              }
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <ShieldCheck className="h-4 w-4" />
+                              Confirmar guia
+                            </button>
+                          )}
+                          {isApprovedSelection && (
+                            <button
+                              type="button"
+                              onClick={() => void remoteRefreshShipment()}
+                              disabled={actionLoading || remoteRefreshLoading}
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <RefreshCw
+                                className={cn('h-4 w-4', remoteRefreshLoading && 'animate-spin')}
+                              />
+                              Refresh Envia
+                            </button>
+                          )}
+                          {isApprovedSelection &&
+                            currentGuides.some((guide) => guide.remote_cancelable) && (
+                              <button
+                                type="button"
+                                onClick={() => void cancelAllGuides()}
+                                disabled={actionLoading}
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/15 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <XCircle className="h-4 w-4" />
+                                Cancelar todas
+                              </button>
+                            )}
+                        </div>
+
+                        {isPendingSelection && !currentSelectedQuote && (
+                          <p className="mt-3 text-xs text-zinc-500">
+                            {activeQuoteMode === 'auto'
+                              ? 'Cotiza automaticamente para fijar la mejor opcion antes de confirmar la guia.'
+                              : 'Cotiza y elige una opcion valida antes de confirmar la guia.'}
+                          </p>
+                        )}
+
+                        {currentSelectedQuote && (
+                          <div className="mt-4 rounded-2xl border border-brand/20 bg-brand/10 p-3 text-sm text-zinc-200">
+                            <p className="text-xs uppercase tracking-[0.18em] text-brand/80">
+                              {activeQuoteMode === 'auto'
+                                ? 'Mejor opcion seleccionada automaticamente'
+                                : 'Opcion seleccionada para aprobar'}
+                            </p>
+                            <p className="mt-2 font-semibold">
+                              {currentSelectedQuote.carrier} / {currentSelectedQuote.service}
+                            </p>
+                            <p className="mt-1 text-brand">
+                              {formatMoney(
+                                currentSelectedQuote.amount_cents,
+                                currentSelectedQuote.currency
+                              )}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-400">
+                              {isMultiGuidePlan
+                                ? `Total agregado para ${boxPlanBoxes.length} guias.`
+                                : 'Total para una sola guia.'}
+                            </p>
+                          </div>
+                        )}
+
+                        {showDebugRequest && (
+                          <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.18em] text-amber-200/80">
+                                  Preview de la peticion
+                                </p>
+                                <p className="mt-1 text-sm text-amber-50">
+                                  Estos son los payloads finales que el worker enviaria a
+                                  `ship/generate`.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowDebugRequest(false)}
+                                className="rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold text-amber-100"
+                              >
+                                Ocultar
+                              </button>
+                            </div>
+                            <div className="mt-3 grid gap-3 md:grid-cols-4">
+                              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Fuente settings
+                                </p>
+                                <p className="mt-2 font-semibold">
+                                  {debugRequestSettingsSource === 'provider'
+                                    ? 'provider'
+                                    : debugRequestSettingsSource === 'fallback'
+                                      ? 'fallback'
+                                      : 'sin dato'}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Shipment.type
+                                </p>
+                                <p className="mt-2 font-semibold">
+                                  {debugRequestShipmentType == null
+                                    ? 'sin dato'
+                                    : debugRequestShipmentType}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Guias
+                                </p>
+                                <p className="mt-2 font-semibold">
+                                  {debugRequestGuideCount == null
+                                    ? 'sin dato'
+                                    : debugRequestGuideCount}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-zinc-200">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                                  Campos faltantes
+                                </p>
+                                <p className="mt-2 font-semibold">
+                                  {debugRequestMissingFields.length === 0
+                                    ? 'ninguno'
+                                    : String(debugRequestMissingFields.length)}
+                                </p>
+                              </div>
+                            </div>
+                            {debugRequestWarning && (
+                              <div className="mt-3 rounded-2xl border border-amber-300/20 bg-black/20 px-4 py-3 text-sm text-amber-100">
+                                {debugRequestWarning}
+                              </div>
+                            )}
+                            {debugRequestSettingsSource === 'fallback' && (
+                              <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                                Aviso: el worker uso fallback local `PDF / STOCK_4X6 / thermal`.
+                                Esto no implica un error por si mismo; el Quickstart de Envia
+                                documenta `settings` como opcional para `ship/generate`.
+                              </div>
+                            )}
+                            {debugRequestMissingFields.length > 0 && (
+                              <div className="mt-3 rounded-2xl border border-rose-300/20 bg-black/20 px-4 py-3 text-sm text-rose-100">
+                                Campos faltantes detectados: {debugRequestMissingFields.join(', ')}
+                              </div>
+                            )}
+                            <pre className="mt-3 max-h-[28rem] overflow-auto rounded-2xl border border-white/8 bg-black/30 p-4 text-xs text-zinc-200">
+                              {debugRequestPayload}
+                            </pre>
+                          </div>
+                        )}
+
+                        {activeQuoteMode === 'manual' && currentQuotes.length > 0 && (
+                          <div className="mt-4 space-y-3">
+                            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                              Cotizaciones sugeridas
+                            </p>
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              {currentQuotes.map((quote) => {
+                                const active =
+                                  currentSelectedQuote?.carrier === quote.carrier &&
+                                  currentSelectedQuote?.service === quote.service &&
+                                  currentSelectedQuote?.amount_cents === quote.amount_cents
+                                return (
+                                  <button
+                                    key={`${quote.carrier}-${quote.service}-${quote.amount_cents}`}
+                                    type="button"
+                                    onClick={() => chooseQuote('manual', quote)}
+                                    className={cn(
+                                      'rounded-2xl border p-3 text-left',
+                                      active
+                                        ? 'border-brand/40 bg-brand/10'
+                                        : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                                    )}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-sm font-semibold text-zinc-100">
+                                          {quote.carrier}
+                                        </p>
+                                        <p className="mt-1 text-xs text-zinc-400">
+                                          {quote.service}
+                                        </p>
+                                      </div>
+                                      <p className="text-sm font-semibold text-brand">
+                                        {formatMoney(quote.amount_cents, quote.currency)}
+                                      </p>
+                                    </div>
+                                    <p className="mt-2 text-xs text-zinc-500">
+                                      {quote.estimated_days == null
+                                        ? 'Sin estimado'
+                                        : `${quote.estimated_days} dia(s) estimados`}
+                                    </p>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
-                </ShipmentActivityPanel>
+
+                      {isPendingSelection && (
+                        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4">
+                          <p className="text-sm font-semibold text-rose-100">Rechazar envio</p>
+                          <textarea
+                            value={rejectReason}
+                            rows={3}
+                            onChange={(event) => setRejectReason(event.target.value)}
+                            placeholder="Motivo obligatorio del rechazo"
+                            className="mt-3 w-full rounded-2xl border border-rose-400/20 bg-black/20 px-3 py-3 text-sm text-rose-50 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void rejectShipment()}
+                            disabled={actionLoading}
+                            className="mt-3 inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <XCircle className="h-4 w-4" />
+                            Rechazar pedido
+                          </button>
+                        </div>
+                      )}
+                    </ShipmentQuotePanel>
+                  )}
+
+                  {detailTab === 'guides' && (
+                    <ShipmentGuidesPanel>
+                      {selectedOrder.shipment ? (
+                        <div className="grid gap-4 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+                          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-zinc-300">
+                            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                              Envio actual
+                            </p>
+                            <p className="mt-2">
+                              Carrier: {selectedOrder.shipment.carrier || 'Pendiente'}
+                            </p>
+                            <p className="mt-1">
+                              Servicio: {selectedOrder.shipment.service || 'Pendiente'}
+                            </p>
+                            <p className="mt-1">
+                              Cotizacion:{' '}
+                              {selectedOrder.shipment.quote_amount_cents == null
+                                ? 'Sin cotizar'
+                                : formatMoney(
+                                    selectedOrder.shipment.quote_amount_cents,
+                                    selectedOrder.shipment.currency
+                                  )}
+                            </p>
+                            <p className="mt-1">
+                              Ultimo sync: {formatDate(selectedOrder.shipment.last_sync_at)}
+                            </p>
+                            {selectedOrder.shipment.remote_status_text && (
+                              <p className="mt-1">
+                                Estado remoto: {selectedOrder.shipment.remote_status_text}
+                              </p>
+                            )}
+                            {selectedOrder.shipment.box_type?.box_type_name && (
+                              <p className="mt-1">
+                                Caja: {selectedOrder.shipment.box_type.box_type_name}
+                              </p>
+                            )}
+                            {selectedOrder.shipment.tracking_sync_paused_at && (
+                              <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                                Sync pausado:{' '}
+                                {selectedOrder.shipment.tracking_sync_pause_reason ||
+                                  'Reintento manual requerido.'}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-zinc-300">
+                            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                              Documentos
+                            </p>
+                            <p className="mt-2">Guias: {currentGuides.length || 0}</p>
+                            <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
+                              {currentGuides.length === 0 ? (
+                                <p className="text-xs text-zinc-500">Aun no hay guias generadas.</p>
+                              ) : (
+                                currentGuides.map((guide) => {
+                                  const localFile = getLocalGuideFile(guide)
+                                  return (
+                                    <div
+                                      key={guide.guide_index}
+                                      className="rounded-2xl border border-white/8 bg-black/20 p-3"
+                                    >
+                                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                          <p className="font-semibold text-zinc-100">
+                                            Guia {guide.guide_index}:{' '}
+                                            {guide.tracking_number || 'Sin tracking'}
+                                          </p>
+                                          <p className="mt-1 text-xs text-zinc-500">
+                                            {guide.carrier || 'Carrier pendiente'} /{' '}
+                                            {guide.service || 'Servicio pendiente'}
+                                          </p>
+                                          <div className="mt-2 flex flex-wrap gap-2">
+                                            <span
+                                              className={cn(
+                                                'rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+                                                statusClass(guide.shipment_status)
+                                              )}
+                                            >
+                                              {statusLabel(guide.shipment_status)}
+                                            </span>
+                                            {guide.remote_cancelable && (
+                                              <span className="rounded-full border border-sky-400/25 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
+                                                Cancelable en Envia
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                          {localFile?.exists && (
+                                            <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
+                                              PDF local listo
+                                            </span>
+                                          )}
+                                          {guide.box_type?.box_type_name && (
+                                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200">
+                                              {guide.box_type.box_type_name}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {(guide.remote_status_text ||
+                                        guide.remote_checked_at ||
+                                        guide.box_type?.box_type_code) && (
+                                        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
+                                          {guide.remote_status_text && (
+                                            <p>Estado remoto: {guide.remote_status_text}</p>
+                                          )}
+                                          {guide.remote_checked_at && (
+                                            <p className="mt-1">
+                                              Ultima consulta Envia:{' '}
+                                              {formatDate(guide.remote_checked_at)}
+                                            </p>
+                                          )}
+                                          {guide.box_type?.box_type_code && (
+                                            <p className="mt-1">
+                                              Caja: {guide.box_type.box_type_code}
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {guide.label_url && (
+                                          <a
+                                            href={
+                                              guide.label_r2_key
+                                                ? `/api/assets/${encodeURIComponent(guide.label_r2_key)}?download=1`
+                                                : guide.label_url
+                                            }
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            download
+                                            className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                          >
+                                            Descargar etiqueta
+                                          </a>
+                                        )}
+                                        {guide.tracking_url && (
+                                          <a
+                                            href={guide.tracking_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                          >
+                                            Abrir tracking
+                                          </a>
+                                        )}
+                                        {guide.label_url && !hasDesktopApi() && (
+                                          <div className="w-full rounded-xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                                            Impresion y gestion local de PDF requieren la app de
+                                            escritorio.
+                                          </div>
+                                        )}
+                                        {hasDesktopApi() && guide.label_url && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void previewGuidePdf(guide).catch((error) =>
+                                                  setMsg({
+                                                    type: 'error',
+                                                    text:
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'No se pudo abrir la vista previa.'
+                                                  })
+                                                )
+                                              }
+                                              className="rounded-xl bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-500/20"
+                                            >
+                                              Ver PDF
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void openGuidePdfFile(guide).catch((error) =>
+                                                  setMsg({
+                                                    type: 'error',
+                                                    text:
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'No se pudo abrir el archivo.'
+                                                  })
+                                                )
+                                              }
+                                              className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                            >
+                                              <ExternalLink className="h-3.5 w-3.5" />
+                                              Abrir archivo
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void printGuidePdf(guide).catch((error) =>
+                                                  setMsg({
+                                                    type: 'error',
+                                                    text:
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'No se pudo imprimir la guia.'
+                                                  })
+                                                )
+                                              }
+                                              className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                            >
+                                              Imprimir
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void showGuideInFolder(guide).catch((error) =>
+                                                  setMsg({
+                                                    type: 'error',
+                                                    text:
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'No se pudo abrir la carpeta.'
+                                                  })
+                                                )
+                                              }
+                                              className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                            >
+                                              Abrir carpeta
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void copyGuidePdfPath(guide)
+                                                  .then(() =>
+                                                    setMsg({
+                                                      type: 'success',
+                                                      text: 'Ruta local copiada al portapapeles.'
+                                                    })
+                                                  )
+                                                  .catch((error) =>
+                                                    setMsg({
+                                                      type: 'error',
+                                                      text:
+                                                        error instanceof Error
+                                                          ? error.message
+                                                          : 'No se pudo copiar la ruta.'
+                                                    })
+                                                  )
+                                              }
+                                              className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                            >
+                                              <Copy className="h-3.5 w-3.5" />
+                                              Copiar ruta
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void showGuideInFolder(guide, true).catch((error) =>
+                                                  setMsg({
+                                                    type: 'error',
+                                                    text:
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'No se pudo guardar la guia local.'
+                                                  })
+                                                )
+                                              }
+                                              className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
+                                            >
+                                              Guardar de nuevo
+                                            </button>
+                                          </>
+                                        )}
+                                        {guide.remote_cancelable &&
+                                          guide.shipment_status !== 'cancelled' &&
+                                          guide.shipment_status !== 'delivered' &&
+                                          guide.shipment_status !== 'lost' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => void cancelGuide(guide)}
+                                              disabled={actionLoading}
+                                              className="inline-flex items-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              <XCircle className="h-3.5 w-3.5" />
+                                              Cancelar guia
+                                            </button>
+                                          )}
+                                      </div>
+                                    </div>
+                                  )
+                                })
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-6 text-sm text-zinc-400">
+                          Aun no existe un registro de envio para este pedido.
+                        </div>
+                      )}
+                    </ShipmentGuidesPanel>
+                  )}
+
+                  {detailTab === 'activity' && (
+                    <ShipmentActivityPanel>
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                        <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                          <p className="text-sm font-semibold text-zinc-100">Items del pedido</p>
+                          <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
+                            {selectedOrder.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3 text-sm"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-zinc-100">
+                                    {item.product_title || item.product_slug}
+                                  </p>
+                                  <p className="mt-1 text-xs text-zinc-500">
+                                    {item.quantity} x{' '}
+                                    {formatMoney(item.unit_price_cents, selectedOrder.currency)}
+                                  </p>
+                                </div>
+                                <p className="font-semibold text-zinc-100">
+                                  {formatMoney(item.amount_cents, selectedOrder.currency)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                          <p className="text-sm font-semibold text-zinc-100">Bitacora de envio</p>
+                          <div className="mt-3 max-h-[34rem] space-y-3 overflow-auto pr-1">
+                            {selectedOrder.shipment_events.length === 0 ? (
+                              <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-4 text-sm text-zinc-500">
+                                Aun no hay eventos registrados.
+                              </div>
+                            ) : (
+                              selectedOrder.shipment_events.map((event) => (
+                                <div
+                                  key={event.id}
+                                  className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-sm font-semibold text-zinc-100">
+                                      {event.event_type}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">
+                                      {formatDate(event.created_at)}
+                                    </p>
+                                  </div>
+                                  <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
+                                    {event.source}
+                                  </p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </ShipmentActivityPanel>
+                  )}
+                </div>
               )}
-            </div>
-          )}
             </section>
           </div>
         </div>

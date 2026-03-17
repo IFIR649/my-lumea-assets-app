@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from './lib/utils'
 import OrdersManager from './components/OrdersManager'
+import AnalyticsManager from './components/AnalyticsManager'
 import ShipmentsManager from './components/ShipmentsManager'
 import VariantsManager from './components/VariantsManager'
 import ReviewsManager from './components/ReviewsManager'
@@ -39,6 +40,7 @@ type View =
   | 'orders'
   | 'shipments'
   | 'connections'
+  | 'analytics'
 type Msg = { type: 'error' | 'success' | 'info'; text: string } | null
 
 type ProductImage = {
@@ -1330,7 +1332,8 @@ function App(): React.JSX.Element {
     { id: 'reviews', label: 'Resenas', hint: 'Moderacion' },
     { id: 'orders', label: 'Pedidos', hint: 'Flujo comercial' },
     { id: 'shipments', label: 'Envios', hint: 'Cotizar y guias' },
-    { id: 'connections', label: 'Conexiones', hint: 'Health y entorno' }
+    { id: 'connections', label: 'Conexiones', hint: 'Health y entorno' },
+    { id: 'analytics', label: 'Inteligencia', hint: 'KPIs y reportes' }
   ]
   const activeView = viewTabs.find((item) => item.id === view) || viewTabs[0]
 
@@ -2407,6 +2410,8 @@ function App(): React.JSX.Element {
             {view === 'orders' && <OrdersManager />}
 
             {view === 'shipments' && <ShipmentsManager />}
+
+            {view === 'analytics' && <AnalyticsManager />}
 
             {view === 'connections' && (
               <div className="mx-auto w-full max-w-5xl space-y-4">
