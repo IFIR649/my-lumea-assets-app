@@ -77,15 +77,15 @@ Si faltan migraciones `0005/0006`, los endpoints de variantes/resenas responden 
 
 ## Archivos clave
 
-| Archivo | Responsabilidad |
-|---|---|
-| `worker/index.ts` | Router principal del Worker, toda la logica de negocio |
-| `worker/envia.ts` | Adaptador Envia (cotizaciones, guias, tracking) |
-| `src/renderer/src/App.tsx` | Shell principal del admin (vistas: create, assets, products, variants, reviews, orders, shipments, connections) |
-| `src/renderer/src/components/ShipmentsManager.tsx` | Flujo de envios: cotizacion, aprobacion, cancelacion, PDFs |
-| `src/renderer/src/components/AssetsManager.tsx` | Cola local, optimizacion WebP, upload a `/api/upload`, exploracion R2 |
-| `src/main/index.ts` | Proceso principal Electron |
-| `src/preload/index.ts` + `index.d.ts` | Contrato tipado de `window.api` |
+| Archivo                                            | Responsabilidad                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `worker/index.ts`                                  | Router principal del Worker, toda la logica de negocio                                                          |
+| `worker/envia.ts`                                  | Adaptador Envia (cotizaciones, guias, tracking)                                                                 |
+| `src/renderer/src/App.tsx`                         | Shell principal del admin (vistas: create, assets, products, variants, reviews, orders, shipments, connections) |
+| `src/renderer/src/components/ShipmentsManager.tsx` | Flujo de envios: cotizacion, aprobacion, cancelacion, PDFs                                                      |
+| `src/renderer/src/components/AssetsManager.tsx`    | Cola local, optimizacion WebP, upload a `/api/upload`, exploracion R2                                           |
+| `src/main/index.ts`                                | Proceso principal Electron                                                                                      |
+| `src/preload/index.ts` + `index.d.ts`              | Contrato tipado de `window.api`                                                                                 |
 
 ## Validacion recomendada despues de cambios
 

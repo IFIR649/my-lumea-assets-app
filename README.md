@@ -1,6 +1,7 @@
 # my-lumea-assets-app (Web + Wrangler)
 
 Aplicacion web para alta de productos con imagen:
+
 - Frontend React + Vite (acceso por LAN)
 - Backend Cloudflare Worker (API REST)
 - D1 por binding `DB`
@@ -44,6 +45,7 @@ npm install
 ## Desarrollo local por LAN
 
 Este comando levanta:
+
 - Worker API en `0.0.0.0:8787` (modo remoto para usar D1/R2 reales)
 - Frontend en `0.0.0.0:5173`
 
@@ -64,6 +66,7 @@ http://<IP_DE_TU_PC>:5173
 ```
 
 Nota de red en Windows:
+
 - Usa la IP de tu adaptador con gateway de tu router (ejemplo en este equipo: `192.168.100.4`), no la IP host-only como `192.168.56.1`.
 - Si no entra desde el telefono, abre puertos en PowerShell ejecutado como Administrador:
 
@@ -188,13 +191,17 @@ Respuesta de listado/detalle incluye `canonical_path` calculado:
 Para mutaciones de pedidos (`PATCH /api/orders/:id`) configura:
 
 - `ADMIN_API_TOKEN` como secreto del Worker:
+
 ```bash
 npx wrangler secret put ADMIN_API_TOKEN
 ```
+
 - En local crea `.dev.vars` con:
+
 ```bash
 ADMIN_API_TOKEN=tu_token
 ```
+
 - Header: `Authorization: Bearer <ADMIN_API_TOKEN>`.
 
 ## Build y deploy

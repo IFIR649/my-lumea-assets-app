@@ -1,25 +1,25 @@
-import { useEffect, useState } from "react";
-import { adminApi, type ChatAuditRow } from "../lib/api";
-import { Avatar } from "./Avatar";
-import { Card, CardBody, CardHeader } from "./Card";
+import { useEffect, useState } from 'react'
+import { adminApi, type ChatAuditRow } from '../lib/api'
+import { Avatar } from './Avatar'
+import { Card, CardBody, CardHeader } from './Card'
 
-type ToastFn = (kind: "success" | "error" | "info", msg: string) => void;
+type ToastFn = (kind: 'success' | 'error' | 'info', msg: string) => void
 
 export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
-  const [rows, setRows] = useState<ChatAuditRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [purging, setPurging] = useState(false);
+  const [rows, setRows] = useState<ChatAuditRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [purging, setPurging] = useState(false)
 
-  const [kind, setKind] = useState<"" | "broadcast" | "dm">("");
-  const [q, setQ] = useState("");
-  const [fromId, setFromId] = useState("");
-  const [toId, setToId] = useState("");
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [exportDays, setExportDays] = useState(7);
-  const [retentionDays, setRetentionDays] = useState(30);
+  const [kind, setKind] = useState<'' | 'broadcast' | 'dm'>('')
+  const [q, setQ] = useState('')
+  const [fromId, setFromId] = useState('')
+  const [toId, setToId] = useState('')
+  const [cursor, setCursor] = useState<number | null>(null)
+  const [exportDays, setExportDays] = useState(7)
+  const [retentionDays, setRetentionDays] = useState(30)
 
   async function load(reset = true) {
-    setLoading(true);
+    setLoading(true)
     try {
       const data = await adminApi.chatMessages({
         limit: 120,
@@ -27,43 +27,43 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
         kind,
         q,
         fromId,
-        toId,
-      });
+        toId
+      })
 
-      setRows((prev) => (reset ? data.rows : [...prev, ...data.rows]).slice(0, 800));
-      setCursor(data.nextCursor);
+      setRows((prev) => (reset ? data.rows : [...prev, ...data.rows]).slice(0, 800))
+      setCursor(data.nextCursor)
     } catch (err) {
-      const message = err instanceof Error ? err.message : "error";
-      toast("error", `No pude cargar auditoria: ${message}`);
+      const message = err instanceof Error ? err.message : 'error'
+      toast('error', `No pude cargar auditoria: ${message}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   async function purgeOldMessages() {
-    const days = Number.isFinite(retentionDays) ? Math.max(1, retentionDays) : 30;
+    const days = Number.isFinite(retentionDays) ? Math.max(1, retentionDays) : 30
     const ok = window.confirm(
       `Se borraran mensajes con antiguedad mayor a ${days} dias. Esta accion no se puede deshacer.`
-    );
-    if (!ok) return;
+    )
+    if (!ok) return
 
-    setPurging(true);
+    setPurging(true)
     try {
-      const result = await adminApi.purgeChat(days);
-      toast("success", `Purgado listo. Eliminados: ${result.deleted}`);
-      load(true);
+      const result = await adminApi.purgeChat(days)
+      toast('success', `Purgado listo. Eliminados: ${result.deleted}`)
+      load(true)
     } catch (err) {
-      const message = err instanceof Error ? err.message : "error";
-      toast("error", `No pude purgar mensajes: ${message}`);
+      const message = err instanceof Error ? err.message : 'error'
+      toast('error', `No pude purgar mensajes: ${message}`)
     } finally {
-      setPurging(false);
+      setPurging(false)
     }
   }
 
   useEffect(() => {
-    load(true);
+    load(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
 
   return (
     <Card>
@@ -77,15 +77,15 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
               onClick={() => load(true)}
               type="button"
             >
-              {loading ? "..." : "Refrescar"}
+              {loading ? '...' : 'Refrescar'}
             </button>
 
             <button
               className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               onClick={() => {
-                const days = Math.max(1, exportDays);
-                const since = Date.now() - days * 24 * 60 * 60 * 1000;
-                window.open(adminApi.chatExportUrl(since), "_blank");
+                const days = Math.max(1, exportDays)
+                const since = Date.now() - days * 24 * 60 * 60 * 1000
+                window.open(adminApi.chatExportUrl(since), '_blank')
               }}
               type="button"
             >
@@ -105,9 +105,9 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
             className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
             value={kind}
             onChange={(e) => {
-              const value = e.target.value;
-              if (value === "broadcast" || value === "dm") setKind(value);
-              else setKind("");
+              const value = e.target.value
+              if (value === 'broadcast' || value === 'dm') setKind(value)
+              else setKind('')
             }}
           >
             <option value="">Todos</option>
@@ -140,8 +140,8 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
             <button
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               onClick={() => {
-                setCursor(null);
-                load(true);
+                setCursor(null)
+                load(true)
               }}
               type="button"
             >
@@ -150,12 +150,12 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
             <button
               className="rounded-xl border border-slate-200 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
               onClick={() => {
-                setKind("");
-                setQ("");
-                setFromId("");
-                setToId("");
-                setCursor(null);
-                setTimeout(() => load(true), 0);
+                setKind('')
+                setQ('')
+                setFromId('')
+                setToId('')
+                setCursor(null)
+                setTimeout(() => load(true), 0)
               }}
               type="button"
             >
@@ -167,7 +167,9 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
         <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-white/70 p-3 lg:grid-cols-2">
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <div className="mb-1 text-xs font-semibold text-slate-700">Exportar ultimos N dias</div>
+              <div className="mb-1 text-xs font-semibold text-slate-700">
+                Exportar ultimos N dias
+              </div>
               <input
                 className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
                 type="number"
@@ -180,9 +182,9 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
               className="rounded-xl border border-slate-200 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
               type="button"
               onClick={() => {
-                const days = Math.max(1, exportDays);
-                const since = Date.now() - days * 24 * 60 * 60 * 1000;
-                window.open(adminApi.chatExportUrl(since), "_blank");
+                const days = Math.max(1, exportDays)
+                const since = Date.now() - days * 24 * 60 * 60 * 1000
+                window.open(adminApi.chatExportUrl(since), '_blank')
               }}
             >
               Exportar
@@ -191,7 +193,9 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
 
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <div className="mb-1 text-xs font-semibold text-slate-700">Retencion: borrar mayores a N dias</div>
+              <div className="mb-1 text-xs font-semibold text-slate-700">
+                Retencion: borrar mayores a N dias
+              </div>
               <input
                 className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
                 type="number"
@@ -206,7 +210,7 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
               disabled={purging}
               onClick={purgeOldMessages}
             >
-              {purging ? "Purgando..." : "Purgar"}
+              {purging ? 'Purgando...' : 'Purgar'}
             </button>
           </div>
         </div>
@@ -221,27 +225,36 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
                   <div className="flex min-w-0 items-center gap-2">
                     <Avatar id={m.fromId} name={m.fromName} size={28} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-900">{m.fromName}</div>
-                      <div className="truncate font-mono text-[11px] text-slate-500">{m.fromId}</div>
+                      <div className="truncate text-sm font-semibold text-slate-900">
+                        {m.fromName}
+                      </div>
+                      <div className="truncate font-mono text-[11px] text-slate-500">
+                        {m.fromId}
+                      </div>
                     </div>
                     <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {m.type === "dm" ? "DM" : "Broadcast"}
+                      {m.type === 'dm' ? 'DM' : 'Broadcast'}
                     </span>
-                    {m.type === "dm" && m.toId ? (
+                    {m.type === 'dm' && m.toId ? (
                       <span className="truncate font-mono text-[11px] text-slate-500">
                         to {m.toId}
                       </span>
                     ) : null}
                   </div>
-                  <div className="text-[11px] text-slate-500">{new Date(m.ts).toLocaleString()}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {new Date(m.ts).toLocaleString()}
+                  </div>
                 </div>
 
-                <div className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-900">{m.text}</div>
+                <div className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-900">
+                  {m.text}
+                </div>
 
-                {m.type === "dm" ? (
+                {m.type === 'dm' ? (
                   <div className="mt-2 text-[11px] text-slate-500">
-                    Entregado: {m.deliveredAt ? new Date(m.deliveredAt).toLocaleString() : "pendiente"} - Leido:{" "}
-                    {m.readAt ? new Date(m.readAt).toLocaleString() : "-"}
+                    Entregado:{' '}
+                    {m.deliveredAt ? new Date(m.deliveredAt).toLocaleString() : 'pendiente'} -
+                    Leido: {m.readAt ? new Date(m.readAt).toLocaleString() : '-'}
                   </div>
                 ) : null}
               </div>
@@ -262,5 +275,5 @@ export function ChatAuditPanel({ toast }: { toast: ToastFn }) {
         </div>
       </CardBody>
     </Card>
-  );
+  )
 }

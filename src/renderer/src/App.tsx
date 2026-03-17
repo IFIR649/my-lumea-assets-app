@@ -1322,1160 +1322,1239 @@ function App(): React.JSX.Element {
     </div>
   )
 
+  const viewTabs: Array<{ id: View; label: string; hint: string }> = [
+    { id: 'create', label: 'Crear', hint: 'Alta de catalogo' },
+    { id: 'assets', label: 'Assets', hint: 'Biblioteca R2' },
+    { id: 'products', label: 'Productos', hint: 'Edicion completa' },
+    { id: 'variants', label: 'Variantes', hint: 'Opciones SKU' },
+    { id: 'reviews', label: 'Resenas', hint: 'Moderacion' },
+    { id: 'orders', label: 'Pedidos', hint: 'Flujo comercial' },
+    { id: 'shipments', label: 'Envios', hint: 'Cotizar y guias' },
+    { id: 'connections', label: 'Conexiones', hint: 'Health y entorno' }
+  ]
+  const activeView = viewTabs.find((item) => item.id === view) || viewTabs[0]
+
   return (
-    <div className="flex min-h-screen flex-col bg-surface text-zinc-200">
-      <header className="sticky top-0 z-20 border-b border-white/5 bg-gradient-to-r from-surface100 via-surface100 to-surface/95 backdrop-blur-sm">
-        <div className="flex min-h-14 items-center justify-between gap-3 px-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 shadow-glow">
-              <PackagePlus className="h-5 w-5 text-brand" />
+    <div className="min-h-screen bg-surface text-zinc-100">
+      <div className="mx-auto grid min-h-screen w-full max-w-[1800px] lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="hidden border-r border-white/10 bg-surface100/90 px-4 py-5 lg:flex lg:flex-col lg:gap-5">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand/30 bg-brand/15 shadow-glow">
+                <PackagePlus className="h-5 w-5 text-brand" />
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">Lumea</p>
+                <h1 className="text-sm font-semibold tracking-[0.1em] text-zinc-100">Gestor Web</h1>
+              </div>
             </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">
-                Lumea Imperium
-              </p>
-              <h1 className="text-xs font-semibold tracking-[0.18em] sm:text-sm">Gestor Web</h1>
-            </div>
+            <p className="mt-3 text-xs text-zinc-400">Panel operativo del catalogo y logistica.</p>
           </div>
+
+          <nav className="space-y-1 rounded-2xl border border-white/10 bg-black/20 p-2">
+            {viewTabs.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setView(item.id)}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition',
+                  view === item.id
+                    ? 'bg-brand text-black shadow-sm'
+                    : 'text-zinc-300 hover:bg-white/10 hover:text-zinc-100'
+                )}
+              >
+                <span className="font-semibold">{item.label}</span>
+                <span
+                  className={cn(
+                    'text-[11px] uppercase tracking-[0.15em]',
+                    view === item.id ? 'text-black/70' : 'text-zinc-500'
+                  )}
+                >
+                  {item.hint}
+                </span>
+              </button>
+            ))}
+          </nav>
+
           <button
             onClick={() => void checkConnections()}
-            className="rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/10"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/10"
           >
             Recargar conexiones
           </button>
-        </div>
-        <nav className="flex gap-2 overflow-x-auto border-t border-white/5 px-3 py-2 sm:px-6">
-          {(
-            [
-              'create',
-              'assets',
-              'products',
-              'variants',
-              'reviews',
-              'orders',
-              'shipments',
-              'connections'
-            ] as View[]
-          ).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={cn(
-                'rounded-lg px-3 py-2 text-xs font-semibold',
-                view === v ? 'bg-brand text-black' : 'bg-white/5 text-zinc-300'
-              )}
-            >
-              {v === 'create'
-                ? 'Crear'
-                : v === 'assets'
-                  ? 'Assets'
-                  : v === 'products'
-                    ? 'Productos'
-                    : v === 'variants'
-                      ? 'Variantes'
-                      : v === 'reviews'
-                        ? 'Resenas'
-                        : v === 'orders'
-                          ? 'Pedidos'
-                          : v === 'shipments'
-                            ? 'Envios'
-                            : 'Conexiones'}
-            </button>
-          ))}
-        </nav>
-      </header>
+        </aside>
 
-      <main className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
-        <input
-          ref={editImageInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={chooseEditImageFile}
-          className="hidden"
-        />
-
-        {msg && (
-          <div
-            className={cn(
-              'mb-4 flex items-center gap-3 rounded-2xl px-4 py-3 text-sm',
-              msg.type === 'error' && 'bg-rose-500/5 text-rose-200',
-              msg.type === 'success' && 'bg-emerald-500/5 text-emerald-200',
-              msg.type === 'info' && 'bg-sky-500/5 text-sky-200'
-            )}
-          >
-            {msg.type === 'error' ? (
-              <AlertCircle className="h-4 w-4" />
-            ) : msg.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            )}
-            <span>{msg.text}</span>
-          </div>
-        )}
-
-        {view === 'create' && (
-          <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-            <form
-              onSubmit={(e) => void submitCreate(e)}
-              className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6"
-            >
-              {renderTypeCrud()}
-              <div className="grid gap-4 md:grid-cols-3">
-                <input
-                  value={form.title}
-                  required
-                  onChange={(e) => {
-                    const nextTitle = e.target.value
-                    const nextSlug =
-                      !slugTouched || !form.slug.trim() ? slugify(nextTitle) : form.slug
-                    const nextSeoSlug =
-                      !seoSlugTouched || !form.seo_slug.trim()
-                        ? slugify(nextSlug || nextTitle)
-                        : form.seo_slug
-                    setForm((c) => ({
-                      ...c,
-                      title: nextTitle,
-                      slug: nextSlug,
-                      seo_slug: nextSeoSlug
-                    }))
-                  }}
-                  placeholder="Titulo"
-                  className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-                />
-                <input
-                  value={form.slug}
-                  required
-                  onChange={(e) => {
-                    const nextSlug = slugify(e.target.value)
-                    setSlugTouched(true)
-                    setForm((c) => ({
-                      ...c,
-                      slug: nextSlug,
-                      seo_slug: seoSlugTouched ? c.seo_slug : slugify(nextSlug)
-                    }))
-                  }}
-                  placeholder="slug"
-                  className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-                />
-                <input
-                  value={form.seo_slug}
-                  required
-                  onChange={(e) => {
-                    setSeoSlugTouched(true)
-                    setForm((c) => ({ ...c, seo_slug: slugify(e.target.value) }))
-                  }}
-                  placeholder="seo_slug"
-                  className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-                />
+        <div className="flex min-w-0 flex-col">
+          <header className="sticky top-0 z-20 border-b border-white/10 bg-surface/95 backdrop-blur">
+            <div className="flex min-h-14 items-center justify-between gap-3 px-3 sm:px-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand/25 bg-brand/15 lg:hidden">
+                  <PackagePlus className="h-5 w-5 text-brand" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-zinc-100">{activeView.label}</p>
+                  <p className="text-[11px] text-zinc-400">{activeView.hint}</p>
+                </div>
               </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <label className="relative block">
-                  <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                  <input
-                    value={form.price}
-                    required
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    onChange={(e) => setForm((c) => ({ ...c, price: e.target.value }))}
-                    placeholder="Precio MXN"
-                    className="w-full rounded-xl border border-white/5 bg-surface100 py-3 pl-9 pr-3 text-sm outline-none"
-                  />
-                </label>
-                <input
-                  value={form.stock}
-                  required
-                  type="number"
-                  min="0"
-                  step="1"
-                  onChange={(e) => setForm((c) => ({ ...c, stock: e.target.value }))}
-                  placeholder="Stock"
-                  className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-                />
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm((c) => ({ ...c, type: e.target.value }))}
-                  disabled={productTypes.length === 0}
-                  className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {productTypes.length === 0 ? (
-                    <option value="">Sin types</option>
-                  ) : (
-                    productTypes.map((type) => (
-                      <option key={type.id} value={type.type}>
-                        {type.type}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-              <input
-                value={form.short_desc}
-                required
-                onChange={(e) => setForm((c) => ({ ...c, short_desc: e.target.value }))}
-                placeholder="Descripcion corta"
-                className="mt-4 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-              />
-              <textarea
-                value={form.description}
-                rows={4}
-                onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
-                placeholder="Descripcion completa"
-                className="mt-4 w-full resize-none rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
-              />
-              <section className="mt-6 rounded-2xl border border-white/5 bg-black/20 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-300">
-                  SEO y comercial
-                </h3>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <input
-                    value={form.sku}
-                    onChange={(e) => setForm((c) => ({ ...c, sku: e.target.value }))}
-                    placeholder="SKU (opcional, backend autocompleta)"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.brand}
-                    onChange={(e) => setForm((c) => ({ ...c, brand: e.target.value }))}
-                    placeholder="Marca"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.material}
-                    onChange={(e) => setForm((c) => ({ ...c, material: e.target.value }))}
-                    placeholder="Material"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.base_metal}
-                    onChange={(e) => setForm((c) => ({ ...c, base_metal: e.target.value }))}
-                    placeholder="Metal base"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.finish_text}
-                    onChange={(e) => setForm((c) => ({ ...c, finish_text: e.target.value }))}
-                    placeholder="Acabado (ej. chapado en oro 18k)"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.main_color}
-                    onChange={(e) => setForm((c) => ({ ...c, main_color: e.target.value }))}
-                    placeholder="Color principal"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                </div>
-                <textarea
-                  value={form.care_instructions}
-                  rows={2}
-                  onChange={(e) => setForm((c) => ({ ...c, care_instructions: e.target.value }))}
-                  placeholder="Instrucciones de cuidado"
-                  className="mt-3 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                />
-                <textarea
-                  value={form.package_includes}
-                  rows={2}
-                  onChange={(e) => setForm((c) => ({ ...c, package_includes: e.target.value }))}
-                  placeholder="Incluye empaque"
-                  className="mt-3 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                />
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                  <input
-                    value={form.shipping_time_min_days}
-                    onChange={(e) =>
-                      setForm((c) => ({ ...c, shipping_time_min_days: e.target.value }))
-                    }
-                    placeholder="Envio min dias"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.shipping_time_max_days}
-                    onChange={(e) =>
-                      setForm((c) => ({ ...c, shipping_time_max_days: e.target.value }))
-                    }
-                    placeholder="Envio max dias"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.return_window_days}
-                    onChange={(e) => setForm((c) => ({ ...c, return_window_days: e.target.value }))}
-                    placeholder="Ventana devolucion dias"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={form.sort}
-                    onChange={(e) => setForm((c) => ({ ...c, sort: e.target.value }))}
-                    placeholder="Sort"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <input
-                    value={form.currency}
-                    onChange={(e) =>
-                      setForm((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
-                    }
-                    placeholder="Moneda (MXN)"
-                    className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="mt-3 grid gap-2 md:grid-cols-3">
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.hypoallergenic}
-                      onChange={(e) => setForm((c) => ({ ...c, hypoallergenic: e.target.checked }))}
-                    />
-                    Hipoalergenico
-                  </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.gift_ready}
-                      onChange={(e) => setForm((c) => ({ ...c, gift_ready: e.target.checked }))}
-                    />
-                    Listo para regalo
-                  </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.is_featured}
-                      onChange={(e) => setForm((c) => ({ ...c, is_featured: e.target.checked }))}
-                    />
-                    Featured
-                  </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.is_bestseller}
-                      onChange={(e) => setForm((c) => ({ ...c, is_bestseller: e.target.checked }))}
-                    />
-                    Bestseller
-                  </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.is_new_arrival}
-                      onChange={(e) => setForm((c) => ({ ...c, is_new_arrival: e.target.checked }))}
-                    />
-                    New arrival
-                  </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.is_active}
-                      onChange={(e) => setForm((c) => ({ ...c, is_active: e.target.checked }))}
-                    />
-                    Activo
-                  </label>
-                </div>
-              </section>
               <button
-                type="submit"
-                disabled={submitting || !connected || images.length === 0 || !form.type}
+                onClick={() => void checkConnections()}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/10 lg:hidden"
+              >
+                Recargar
+              </button>
+            </div>
+            <nav className="flex gap-2 overflow-x-auto border-t border-white/10 px-3 py-2 sm:px-6 lg:hidden">
+              {viewTabs.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setView(item.id)}
+                  className={cn(
+                    'whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold',
+                    view === item.id ? 'bg-brand text-black' : 'bg-white/5 text-zinc-300'
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </header>
+
+          <main className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
+            <input
+              ref={editImageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={chooseEditImageFile}
+              className="hidden"
+            />
+
+            {msg && (
+              <div
                 className={cn(
-                  'mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold',
-                  submitting || !connected || images.length === 0 || !form.type
-                    ? 'bg-surface200 text-zinc-500'
-                    : 'bg-brand text-black'
+                  'mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm',
+                  msg.type === 'error' && 'border-rose-400/30 bg-rose-500/10 text-rose-200',
+                  msg.type === 'success' &&
+                    'border-emerald-400/30 bg-emerald-500/10 text-emerald-200',
+                  msg.type === 'info' && 'border-sky-400/30 bg-sky-500/10 text-sky-100'
                 )}
               >
-                <UploadCloud className="h-4 w-4" />
-                {submitting ? 'Procesando...' : 'Subir y crear producto'}
-              </button>
-            </form>
-            <aside className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold">Selector local web</h3>
-                <button
-                  onClick={() => inputRef.current?.click()}
-                  className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold"
-                >
-                  Elegir imagenes
-                </button>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={chooseFiles}
-                  className="hidden"
-                />
-              </div>
-
-              {selectedImage && (
-                <div className="mt-4 rounded-2xl bg-black/20 p-3">
-                  <img
-                    src={selectedImage.url}
-                    alt={selectedImage.name}
-                    className="h-40 w-full rounded-xl object-cover sm:h-48"
-                    onError={(e) => err('image selected preview', e)}
-                  />
-
-                  <div className="mt-2 space-y-1">
-                    <p className="text-sm text-zinc-300">{selectedImage.name}</p>
-                    <p className="text-xs text-zinc-500">
-                      Posicion {images.findIndex((image) => image.id === selectedImage.id) + 1} de{' '}
-                      {images.length}
-                    </p>
-                    <p className="text-xs text-zinc-500">
-                      Peso original: {fmtSize(selectedImage.originalSize)}
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      {selectedImage.optimization
-                        ? `Peso optimizado: ${fmtSize(selectedImage.optimization.optimizedSize)} (${selectedImage.optimization.savedPercent.toFixed(1)}% menos)`
-                        : `Peso actual: ${fmtSize(selectedImage.size)}`}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void optimizeSelectedImage()}
-                    disabled={optimizingImageId === selectedImage.id || submitting}
-                    className={cn(
-                      'mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
-                      optimizingImageId === selectedImage.id || submitting
-                        ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                        : 'bg-white/10 text-zinc-100 hover:bg-white/15'
-                    )}
-                  >
-                    <RefreshCw
-                      className={cn(
-                        'h-4 w-4',
-                        optimizingImageId === selectedImage.id && 'animate-spin'
-                      )}
-                    />
-                    {optimizingImageId === selectedImage.id ? 'Optimizando...' : 'Optimizar tamaño'}
-                  </button>
-
-                  <input
-                    value={createImageAlts[selectedImage.id] || ''}
-                    onChange={(e) => updateCreateImageAlt(selectedImage.id, e.target.value)}
-                    placeholder="Texto alternativo"
-                    className="mt-3 w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
-                  />
-
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const currentIndex = images.findIndex(
-                          (image) => image.id === selectedImage.id
-                        )
-                        moveCreateImage(currentIndex, currentIndex - 1)
-                      }}
-                      disabled={images.findIndex((image) => image.id === selectedImage.id) <= 0}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Antes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const currentIndex = images.findIndex(
-                          (image) => image.id === selectedImage.id
-                        )
-                        moveCreateImage(currentIndex, currentIndex + 1)
-                      }}
-                      disabled={
-                        images.findIndex((image) => image.id === selectedImage.id) ===
-                        images.length - 1
-                      }
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                    >
-                      Despues
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeCreateImage(selectedImage.id)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Quitar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {images.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
-                  {images.map((img) => (
-                    <div
-                      key={img.id}
-                      className={cn(
-                        'overflow-hidden rounded-xl border p-2 text-left',
-                        selectedImageId === img.id ? 'border-brand bg-brand/5' : 'border-white/10'
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedImageId(img.id)}
-                        className="w-full"
-                      >
-                        <img
-                          src={img.url}
-                          alt={img.name}
-                          className="aspect-square w-full rounded-lg object-cover"
-                          onError={(e) => err(`image grid ${img.name}`, e)}
-                        />
-                      </button>
-                      <p className="mt-2 text-[11px] uppercase tracking-[0.22em] text-zinc-500">
-                        Slot {images.findIndex((image) => image.id === img.id) + 1}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-zinc-400">
-                        {createImageAlts[img.id] ||
-                          defaultImageAlt(
-                            form.title,
-                            images.findIndex((image) => image.id === img.id)
-                          )}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </aside>
-          </div>
-        )}
-
-        {view === 'assets' && <AssetsManager />}
-
-        {view === 'products' && (
-          <div className="flex h-[calc(100vh-80px)] w-full flex-col gap-4 overflow-hidden xl:flex-row">
-            {/* Left Panel: Master View (Products List) */}
-            <div className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02]">
-              <div className="flex-shrink-0 border-b border-white/5 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xl font-semibold">
-                    Productos ({loadingProducts ? '...' : filteredProducts.length})
-                  </h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={productTypeFilter}
-                      onChange={(e) => setProductTypeFilter(e.target.value)}
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-xs"
-                    >
-                      <option value="all">Todos los types</option>
-                      {productTypes.map((type) => (
-                        <option key={type.id} value={type.type}>
-                          {type.type}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => void loadProducts()}
-                      className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      Recargar
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
-                {loadingProducts ? (
-                  <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 text-sm text-zinc-500">
-                    Cargando productos...
-                  </div>
+                {msg.type === 'error' ? (
+                  <AlertCircle className="h-4 w-4" />
+                ) : msg.type === 'success' ? (
+                  <CheckCircle2 className="h-4 w-4" />
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredProducts.map((p) => (
-                      <article
-                        key={p.id}
-                        className={cn(
-                          'rounded-3xl border p-4 transition',
-                          editingId === p.id
-                            ? 'border-brand bg-brand/5'
-                            : 'border-white/5 bg-white/[0.02]'
-                        )}
-                      >
-                        <div className="space-y-2">
-                          <h3 className="text-lg font-semibold">{p.title}</h3>
-                          <p className="text-xs text-zinc-500">/{p.slug}</p>
-                          <p className="text-xs text-zinc-500">seo_slug: {p.seo_slug || 'N/A'}</p>
-                          <p className="text-xs text-zinc-500">
-                            canonical: {p.canonical_path || 'N/A'}
-                          </p>
-                          <p className="text-xs text-zinc-500">Type: {p.type}</p>
-                          <p className="text-xs text-zinc-500">
-                            SKU: {p.sku || 'N/A'} | Marca: {p.brand || 'N/A'}
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            Precio: ${fmtMoney(p.price_cents)} | Stock: {p.stock}
-                          </p>
-                          {Array.isArray(p.images) && p.images.length > 0 && (
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={p.images[0].url}
-                                alt={p.images[0].alt || p.title}
-                                className="h-14 w-14 rounded-lg object-cover"
-                                onError={(e) => err(`product preview ${p.id}`, e)}
-                              />
-                              <p className="text-xs text-zinc-500">
-                                {p.images.length} imagen{p.images.length === 1 ? '' : 'es'}
-                              </p>
-                            </div>
-                          )}
-                          <p className="text-xs text-zinc-500">
-                            featured: {boolFromFlag(p.is_featured) ? '1' : '0'} | bestseller:{' '}
-                            {boolFromFlag(p.is_bestseller) ? '1' : '0'} | new:{' '}
-                            {boolFromFlag(p.is_new_arrival) ? '1' : '0'} | active:{' '}
-                            {boolFromFlag(p.is_active, true) ? '1' : '0'}
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            envio: {p.shipping_time_min_days ?? 'N/A'}-
-                            {p.shipping_time_max_days ?? 'N/A'} dias | devolucion:{' '}
-                            {p.return_window_days ?? 'N/A'} dias
-                          </p>
-                          <p className="truncate text-xs text-zinc-500">
-                            image_key: {p.image_key || 'N/A'}
-                          </p>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => startEdit(p)}
-                              className={cn(
-                                'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
-                                editingId === p.id
-                                  ? 'bg-brand text-black'
-                                  : 'bg-white/5 text-zinc-100 hover:bg-white/10'
-                              )}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              {editingId === p.id ? 'Editando...' : 'Editar'}
-                            </button>
-                            <button
-                              onClick={() => void deleteProduct(p.id, p.title)}
-                              disabled={editingId === p.id}
-                              className={cn(
-                                'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
-                                editingId === p.id
-                                  ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                                  : 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/20'
-                              )}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
                 )}
+                <span>{msg.text}</span>
               </div>
-            </div>
+            )}
 
-            {/* Right Panel: Detail View (Edit Form) */}
-            <div className="flex flex-shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] xl:w-[45%] xl:min-w-[450px]">
-              {editingId ? (
-                <>
-                  <div className="flex items-center justify-between border-b border-white/5 p-4">
-                    <h2 className="text-xl font-semibold">Editar Producto</h2>
-                    <button
-                      type="button"
-                      onClick={cancelEditProduct}
-                      className="inline-flex items-center justify-center rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
-                    >
-                      <XCircle className="h-5 w-5" />
-                    </button>
+            {view === 'create' && (
+              <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+                <form
+                  onSubmit={(e) => void submitCreate(e)}
+                  className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6"
+                >
+                  {renderTypeCrud()}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <input
+                      value={form.title}
+                      required
+                      onChange={(e) => {
+                        const nextTitle = e.target.value
+                        const nextSlug =
+                          !slugTouched || !form.slug.trim() ? slugify(nextTitle) : form.slug
+                        const nextSeoSlug =
+                          !seoSlugTouched || !form.seo_slug.trim()
+                            ? slugify(nextSlug || nextTitle)
+                            : form.seo_slug
+                        setForm((c) => ({
+                          ...c,
+                          title: nextTitle,
+                          slug: nextSlug,
+                          seo_slug: nextSeoSlug
+                        }))
+                      }}
+                      placeholder="Titulo"
+                      className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                    />
+                    <input
+                      value={form.slug}
+                      required
+                      onChange={(e) => {
+                        const nextSlug = slugify(e.target.value)
+                        setSlugTouched(true)
+                        setForm((c) => ({
+                          ...c,
+                          slug: nextSlug,
+                          seo_slug: seoSlugTouched ? c.seo_slug : slugify(nextSlug)
+                        }))
+                      }}
+                      placeholder="slug"
+                      className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                    />
+                    <input
+                      value={form.seo_slug}
+                      required
+                      onChange={(e) => {
+                        setSeoSlugTouched(true)
+                        setForm((c) => ({ ...c, seo_slug: slugify(e.target.value) }))
+                      }}
+                      placeholder="seo_slug"
+                      className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                    />
                   </div>
-                  <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
-                    <div className="space-y-3">
+                  <div className="mt-4 grid gap-4 md:grid-cols-3">
+                    <label className="relative block">
+                      <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                       <input
-                        value={edit.title}
-                        onChange={(e) => setEdit((c) => ({ ...c, title: e.target.value }))}
-                        placeholder="title"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                        value={form.price}
+                        required
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        onChange={(e) => setForm((c) => ({ ...c, price: e.target.value }))}
+                        placeholder="Precio MXN"
+                        className="w-full rounded-xl border border-white/5 bg-surface100 py-3 pl-9 pr-3 text-sm outline-none"
                       />
-                      <input
-                        value={edit.slug}
-                        onChange={(e) => setEdit((c) => ({ ...c, slug: e.target.value }))}
-                        placeholder="slug"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <input
-                        value={edit.seo_slug}
-                        onChange={(e) => setEdit((c) => ({ ...c, seo_slug: e.target.value }))}
-                        placeholder="seo_slug"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <select
-                        value={edit.type}
-                        onChange={(e) => setEdit((c) => ({ ...c, type: e.target.value }))}
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      >
-                        {productTypes.map((type) => (
+                    </label>
+                    <input
+                      value={form.stock}
+                      required
+                      type="number"
+                      min="0"
+                      step="1"
+                      onChange={(e) => setForm((c) => ({ ...c, stock: e.target.value }))}
+                      placeholder="Stock"
+                      className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                    />
+                    <select
+                      value={form.type}
+                      onChange={(e) => setForm((c) => ({ ...c, type: e.target.value }))}
+                      disabled={productTypes.length === 0}
+                      className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {productTypes.length === 0 ? (
+                        <option value="">Sin types</option>
+                      ) : (
+                        productTypes.map((type) => (
                           <option key={type.id} value={type.type}>
                             {type.type}
                           </option>
-                        ))}
-                        {!productTypes.some((type) => type.type === edit.type) && (
-                          <option value={edit.type}>{edit.type || 'sin-type'}</option>
-                        )}
-                      </select>
-                      <div className="grid grid-cols-2 gap-2">
+                        ))
+                      )}
+                    </select>
+                  </div>
+                  <input
+                    value={form.short_desc}
+                    required
+                    onChange={(e) => setForm((c) => ({ ...c, short_desc: e.target.value }))}
+                    placeholder="Descripcion corta"
+                    className="mt-4 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                  />
+                  <textarea
+                    value={form.description}
+                    rows={4}
+                    onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
+                    placeholder="Descripcion completa"
+                    className="mt-4 w-full resize-none rounded-xl border border-white/5 bg-surface100 px-3 py-3 text-sm outline-none"
+                  />
+                  <section className="mt-6 rounded-2xl border border-white/5 bg-black/20 p-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-300">
+                      SEO y comercial
+                    </h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <input
+                        value={form.sku}
+                        onChange={(e) => setForm((c) => ({ ...c, sku: e.target.value }))}
+                        placeholder="SKU (opcional, backend autocompleta)"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.brand}
+                        onChange={(e) => setForm((c) => ({ ...c, brand: e.target.value }))}
+                        placeholder="Marca"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.material}
+                        onChange={(e) => setForm((c) => ({ ...c, material: e.target.value }))}
+                        placeholder="Material"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.base_metal}
+                        onChange={(e) => setForm((c) => ({ ...c, base_metal: e.target.value }))}
+                        placeholder="Metal base"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.finish_text}
+                        onChange={(e) => setForm((c) => ({ ...c, finish_text: e.target.value }))}
+                        placeholder="Acabado (ej. chapado en oro 18k)"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.main_color}
+                        onChange={(e) => setForm((c) => ({ ...c, main_color: e.target.value }))}
+                        placeholder="Color principal"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <textarea
+                      value={form.care_instructions}
+                      rows={2}
+                      onChange={(e) =>
+                        setForm((c) => ({ ...c, care_instructions: e.target.value }))
+                      }
+                      placeholder="Instrucciones de cuidado"
+                      className="mt-3 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                    />
+                    <textarea
+                      value={form.package_includes}
+                      rows={2}
+                      onChange={(e) => setForm((c) => ({ ...c, package_includes: e.target.value }))}
+                      placeholder="Incluye empaque"
+                      className="mt-3 w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                    />
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                      <input
+                        value={form.shipping_time_min_days}
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, shipping_time_min_days: e.target.value }))
+                        }
+                        placeholder="Envio min dias"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.shipping_time_max_days}
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, shipping_time_max_days: e.target.value }))
+                        }
+                        placeholder="Envio max dias"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.return_window_days}
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, return_window_days: e.target.value }))
+                        }
+                        placeholder="Ventana devolucion dias"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={form.sort}
+                        onChange={(e) => setForm((c) => ({ ...c, sort: e.target.value }))}
+                        placeholder="Sort"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <input
+                        value={form.currency}
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
+                        }
+                        placeholder="Moneda (MXN)"
+                        className="rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-3">
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
                         <input
-                          value={edit.price_cents}
-                          onChange={(e) => setEdit((c) => ({ ...c, price_cents: e.target.value }))}
-                          placeholder="price_cents"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          type="checkbox"
+                          checked={form.hypoallergenic}
+                          onChange={(e) =>
+                            setForm((c) => ({ ...c, hypoallergenic: e.target.checked }))
+                          }
                         />
+                        Hipoalergenico
+                      </label>
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
                         <input
-                          value={edit.stock}
-                          onChange={(e) => setEdit((c) => ({ ...c, stock: e.target.value }))}
-                          placeholder="stock"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          type="checkbox"
+                          checked={form.gift_ready}
+                          onChange={(e) => setForm((c) => ({ ...c, gift_ready: e.target.checked }))}
                         />
+                        Listo para regalo
+                      </label>
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.is_featured}
+                          onChange={(e) =>
+                            setForm((c) => ({ ...c, is_featured: e.target.checked }))
+                          }
+                        />
+                        Featured
+                      </label>
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.is_bestseller}
+                          onChange={(e) =>
+                            setForm((c) => ({ ...c, is_bestseller: e.target.checked }))
+                          }
+                        />
+                        Bestseller
+                      </label>
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.is_new_arrival}
+                          onChange={(e) =>
+                            setForm((c) => ({ ...c, is_new_arrival: e.target.checked }))
+                          }
+                        />
+                        New arrival
+                      </label>
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.is_active}
+                          onChange={(e) => setForm((c) => ({ ...c, is_active: e.target.checked }))}
+                        />
+                        Activo
+                      </label>
+                    </div>
+                  </section>
+                  <button
+                    type="submit"
+                    disabled={submitting || !connected || images.length === 0 || !form.type}
+                    className={cn(
+                      'mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold',
+                      submitting || !connected || images.length === 0 || !form.type
+                        ? 'bg-surface200 text-zinc-500'
+                        : 'bg-brand text-black'
+                    )}
+                  >
+                    <UploadCloud className="h-4 w-4" />
+                    {submitting ? 'Procesando...' : 'Subir y crear producto'}
+                  </button>
+                </form>
+                <aside className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold">Selector local web</h3>
+                    <button
+                      onClick={() => inputRef.current?.click()}
+                      className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold"
+                    >
+                      Elegir imagenes
+                    </button>
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={chooseFiles}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {selectedImage && (
+                    <div className="mt-4 rounded-2xl bg-black/20 p-3">
+                      <img
+                        src={selectedImage.url}
+                        alt={selectedImage.name}
+                        className="h-40 w-full rounded-xl object-cover sm:h-48"
+                        onError={(e) => err('image selected preview', e)}
+                      />
+
+                      <div className="mt-2 space-y-1">
+                        <p className="text-sm text-zinc-300">{selectedImage.name}</p>
+                        <p className="text-xs text-zinc-500">
+                          Posicion {images.findIndex((image) => image.id === selectedImage.id) + 1}{' '}
+                          de {images.length}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          Peso original: {fmtSize(selectedImage.originalSize)}
+                        </p>
+                        <p className="text-xs text-zinc-400">
+                          {selectedImage.optimization
+                            ? `Peso optimizado: ${fmtSize(selectedImage.optimization.optimizedSize)} (${selectedImage.optimization.savedPercent.toFixed(1)}% menos)`
+                            : `Peso actual: ${fmtSize(selectedImage.size)}`}
+                        </p>
                       </div>
-                      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                              Galeria
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-400">
-                              Hasta 3 imagenes. La primera sera la portada principal.
-                            </p>
-                          </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void optimizeSelectedImage()}
+                        disabled={optimizingImageId === selectedImage.id || submitting}
+                        className={cn(
+                          'mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
+                          optimizingImageId === selectedImage.id || submitting
+                            ? 'cursor-not-allowed bg-surface200 text-zinc-500'
+                            : 'bg-white/10 text-zinc-100 hover:bg-white/15'
+                        )}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'h-4 w-4',
+                            optimizingImageId === selectedImage.id && 'animate-spin'
+                          )}
+                        />
+                        {optimizingImageId === selectedImage.id
+                          ? 'Optimizando...'
+                          : 'Optimizar tamaño'}
+                      </button>
+
+                      <input
+                        value={createImageAlts[selectedImage.id] || ''}
+                        onChange={(e) => updateCreateImageAlt(selectedImage.id, e.target.value)}
+                        placeholder="Texto alternativo"
+                        className="mt-3 w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
+                      />
+
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentIndex = images.findIndex(
+                              (image) => image.id === selectedImage.id
+                            )
+                            moveCreateImage(currentIndex, currentIndex - 1)
+                          }}
+                          disabled={images.findIndex((image) => image.id === selectedImage.id) <= 0}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Antes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentIndex = images.findIndex(
+                              (image) => image.id === selectedImage.id
+                            )
+                            moveCreateImage(currentIndex, currentIndex + 1)
+                          }}
+                          disabled={
+                            images.findIndex((image) => image.id === selectedImage.id) ===
+                            images.length - 1
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                        >
+                          Despues
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeCreateImage(selectedImage.id)}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {images.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
+                      {images.map((img) => (
+                        <div
+                          key={img.id}
+                          className={cn(
+                            'overflow-hidden rounded-xl border p-2 text-left',
+                            selectedImageId === img.id
+                              ? 'border-brand bg-brand/5'
+                              : 'border-white/10'
+                          )}
+                        >
                           <button
                             type="button"
-                            onClick={addEmptyEditImage}
-                            disabled={editImages.length >= 3}
-                            className={cn(
-                              'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
-                              editImages.length >= 3
-                                ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                                : 'bg-white/10 text-zinc-100 hover:bg-white/15'
-                            )}
+                            onClick={() => setSelectedImageId(img.id)}
+                            className="w-full"
                           >
-                            <ImagePlus className="h-4 w-4" />
-                            Agregar imagen
+                            <img
+                              src={img.url}
+                              alt={img.name}
+                              className="aspect-square w-full rounded-lg object-cover"
+                              onError={(e) => err(`image grid ${img.name}`, e)}
+                            />
                           </button>
+                          <p className="mt-2 text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                            Slot {images.findIndex((image) => image.id === img.id) + 1}
+                          </p>
+                          <p className="mt-1 truncate text-xs text-zinc-400">
+                            {createImageAlts[img.id] ||
+                              defaultImageAlt(
+                                form.title,
+                                images.findIndex((image) => image.id === img.id)
+                              )}
+                          </p>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </aside>
+              </div>
+            )}
 
-                        <div className="mt-3 space-y-3">
-                          {editImages.length === 0 ? (
-                            <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-zinc-500">
-                              Este producto aun no tiene imagenes.
-                            </div>
-                          ) : (
-                            editImages.map((image, index) => (
-                              <div
-                                key={image.id}
-                                className="grid gap-3 rounded-xl border border-white/10 bg-surface100/70 p-3"
-                              >
-                                <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)]">
-                                  <img
-                                    src={getEditImagePreviewUrl(image)}
-                                    alt={image.alt_text || `Imagen ${index + 1}`}
-                                    className="aspect-square w-full rounded-lg object-cover"
-                                    onError={(e) => err(`edit image preview ${image.id}`, e)}
-                                  />
-                                  <div className="space-y-2">
-                                    <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
-                                      Slot {index + 1}
-                                    </p>
-                                    <input
-                                      value={image.image_key}
-                                      onChange={(e) =>
-                                        updateEditImage(image.id, { image_key: e.target.value })
-                                      }
-                                      placeholder="image_key"
-                                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
-                                    />
-                                    <input
-                                      value={image.alt_text}
-                                      onChange={(e) =>
-                                        updateEditImage(image.id, { alt_text: e.target.value })
-                                      }
-                                      placeholder="Texto alternativo"
-                                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
-                                    />
-                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                      <button
-                                        type="button"
-                                        onClick={() => triggerEditFilePicker(image.id)}
-                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
-                                      >
-                                        <UploadCloud className="h-4 w-4" />
-                                        Reemplazar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveEditImage(index, index - 1)}
-                                        disabled={index === 0}
-                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                                      >
-                                        <ChevronLeft className="h-4 w-4" />
-                                        Antes
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveEditImage(index, index + 1)}
-                                        disabled={index === editImages.length - 1}
-                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
-                                      >
-                                        Despues
-                                        <ChevronRight className="h-4 w-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => removeEditImage(image.id)}
-                                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                        Quitar
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
+            {view === 'assets' && <AssetsManager />}
+
+            {view === 'products' && (
+              <div className="flex h-[calc(100vh-80px)] w-full flex-col gap-4 overflow-hidden xl:flex-row">
+                {/* Left Panel: Master View (Products List) */}
+                <div className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02]">
+                  <div className="flex-shrink-0 border-b border-white/5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-xl font-semibold">
+                        Productos ({loadingProducts ? '...' : filteredProducts.length})
+                      </h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={productTypeFilter}
+                          onChange={(e) => setProductTypeFilter(e.target.value)}
+                          className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-xs"
+                        >
+                          <option value="all">Todos los types</option>
+                          {productTypes.map((type) => (
+                            <option key={type.id} value={type.type}>
+                              {type.type}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => void loadProducts()}
+                          className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Recargar
+                        </button>
                       </div>
-                      <input
-                        value={edit.sku}
-                        onChange={(e) => setEdit((c) => ({ ...c, sku: e.target.value }))}
-                        placeholder="sku"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <input
-                        value={edit.brand}
-                        onChange={(e) => setEdit((c) => ({ ...c, brand: e.target.value }))}
-                        placeholder="brand"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <textarea
-                        value={edit.short_desc}
-                        rows={2}
-                        onChange={(e) => setEdit((c) => ({ ...c, short_desc: e.target.value }))}
-                        placeholder="short_desc"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <textarea
-                        value={edit.description}
-                        rows={3}
-                        onChange={(e) => setEdit((c) => ({ ...c, description: e.target.value }))}
-                        placeholder="description"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          value={edit.material}
-                          onChange={(e) => setEdit((c) => ({ ...c, material: e.target.value }))}
-                          placeholder="material"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.base_metal}
-                          onChange={(e) => setEdit((c) => ({ ...c, base_metal: e.target.value }))}
-                          placeholder="base_metal"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.finish_text}
-                          onChange={(e) => setEdit((c) => ({ ...c, finish_text: e.target.value }))}
-                          placeholder="finish_text"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.main_color}
-                          onChange={(e) => setEdit((c) => ({ ...c, main_color: e.target.value }))}
-                          placeholder="main_color"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <textarea
-                        value={edit.care_instructions}
-                        rows={2}
-                        onChange={(e) =>
-                          setEdit((c) => ({ ...c, care_instructions: e.target.value }))
-                        }
-                        placeholder="care_instructions"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <textarea
-                        value={edit.package_includes}
-                        rows={2}
-                        onChange={(e) =>
-                          setEdit((c) => ({ ...c, package_includes: e.target.value }))
-                        }
-                        placeholder="package_includes"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          value={edit.shipping_time_min_days}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, shipping_time_min_days: e.target.value }))
-                          }
-                          placeholder="shipping_time_min_days"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.shipping_time_max_days}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, shipping_time_max_days: e.target.value }))
-                          }
-                          placeholder="shipping_time_max_days"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.return_window_days}
-                          onChange={(e) =>
-                            setEdit((c) => ({ ...c, return_window_days: e.target.value }))
-                          }
-                          placeholder="return_window_days"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={edit.sort}
-                          onChange={(e) => setEdit((c) => ({ ...c, sort: e.target.value }))}
-                          placeholder="sort"
-                          className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <input
-                        value={edit.currency}
-                        onChange={(e) =>
-                          setEdit((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
-                        }
-                        placeholder="currency"
-                        className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
-                      />
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.hypoallergenic}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, hypoallergenic: e.target.checked }))
-                            }
-                          />
-                          hypoallergenic
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.gift_ready}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, gift_ready: e.target.checked }))
-                            }
-                          />
-                          gift_ready
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.is_featured}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, is_featured: e.target.checked }))
-                            }
-                          />
-                          is_featured
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.is_bestseller}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, is_bestseller: e.target.checked }))
-                            }
-                          />
-                          is_bestseller
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.is_new_arrival}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, is_new_arrival: e.target.checked }))
-                            }
-                          />
-                          is_new_arrival
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={edit.is_active}
-                            onChange={(e) =>
-                              setEdit((c) => ({ ...c, is_active: e.target.checked }))
-                            }
-                          />
-                          is_active
-                        </label>
-                      </div>
-                      <p className="text-xs text-zinc-500">
-                        Canonica preview: /producto/{slugify(edit.seo_slug || edit.slug)}
-                      </p>
                     </div>
                   </div>
-                  <div className="flex flex-shrink-0 gap-2 border-t border-white/5 p-4">
-                    <button
-                      onClick={() => void saveEdit()}
-                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-black hover:bg-brand/90"
-                    >
-                      <Save className="h-4 w-4" />
-                      Guardar cambios
-                    </button>
+
+                  <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+                    {loadingProducts ? (
+                      <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 text-sm text-zinc-500">
+                        Cargando productos...
+                      </div>
+                    ) : (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredProducts.map((p) => (
+                          <article
+                            key={p.id}
+                            className={cn(
+                              'rounded-3xl border p-4 transition',
+                              editingId === p.id
+                                ? 'border-brand bg-brand/5'
+                                : 'border-white/5 bg-white/[0.02]'
+                            )}
+                          >
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold">{p.title}</h3>
+                              <p className="text-xs text-zinc-500">/{p.slug}</p>
+                              <p className="text-xs text-zinc-500">
+                                seo_slug: {p.seo_slug || 'N/A'}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                canonical: {p.canonical_path || 'N/A'}
+                              </p>
+                              <p className="text-xs text-zinc-500">Type: {p.type}</p>
+                              <p className="text-xs text-zinc-500">
+                                SKU: {p.sku || 'N/A'} | Marca: {p.brand || 'N/A'}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                Precio: ${fmtMoney(p.price_cents)} | Stock: {p.stock}
+                              </p>
+                              {Array.isArray(p.images) && p.images.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={p.images[0].url}
+                                    alt={p.images[0].alt || p.title}
+                                    className="h-14 w-14 rounded-lg object-cover"
+                                    onError={(e) => err(`product preview ${p.id}`, e)}
+                                  />
+                                  <p className="text-xs text-zinc-500">
+                                    {p.images.length} imagen{p.images.length === 1 ? '' : 'es'}
+                                  </p>
+                                </div>
+                              )}
+                              <p className="text-xs text-zinc-500">
+                                featured: {boolFromFlag(p.is_featured) ? '1' : '0'} | bestseller:{' '}
+                                {boolFromFlag(p.is_bestseller) ? '1' : '0'} | new:{' '}
+                                {boolFromFlag(p.is_new_arrival) ? '1' : '0'} | active:{' '}
+                                {boolFromFlag(p.is_active, true) ? '1' : '0'}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                envio: {p.shipping_time_min_days ?? 'N/A'}-
+                                {p.shipping_time_max_days ?? 'N/A'} dias | devolucion:{' '}
+                                {p.return_window_days ?? 'N/A'} dias
+                              </p>
+                              <p className="truncate text-xs text-zinc-500">
+                                image_key: {p.image_key || 'N/A'}
+                              </p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => startEdit(p)}
+                                  className={cn(
+                                    'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
+                                    editingId === p.id
+                                      ? 'bg-brand text-black'
+                                      : 'bg-white/5 text-zinc-100 hover:bg-white/10'
+                                  )}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  {editingId === p.id ? 'Editando...' : 'Editar'}
+                                </button>
+                                <button
+                                  onClick={() => void deleteProduct(p.id, p.title)}
+                                  disabled={editingId === p.id}
+                                  className={cn(
+                                    'inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold',
+                                    editingId === p.id
+                                      ? 'cursor-not-allowed bg-surface200 text-zinc-500'
+                                      : 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/20'
+                                  )}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Eliminar
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-zinc-500">
-                  <div className="mb-4 rounded-full bg-white/5 p-4">
-                    <PackagePlus className="h-8 w-8 text-zinc-400" />
-                  </div>
-                  <p className="text-sm">Selecciona un producto de la lista</p>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {view === 'variants' && <VariantsManager products={productOptions} />}
+                {/* Right Panel: Detail View (Edit Form) */}
+                <div className="flex flex-shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] xl:w-[45%] xl:min-w-[450px]">
+                  {editingId ? (
+                    <>
+                      <div className="flex items-center justify-between border-b border-white/5 p-4">
+                        <h2 className="text-xl font-semibold">Editar Producto</h2>
+                        <button
+                          type="button"
+                          onClick={cancelEditProduct}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
+                        >
+                          <XCircle className="h-5 w-5" />
+                        </button>
+                      </div>
+                      <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+                        <div className="space-y-3">
+                          <input
+                            value={edit.title}
+                            onChange={(e) => setEdit((c) => ({ ...c, title: e.target.value }))}
+                            placeholder="title"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <input
+                            value={edit.slug}
+                            onChange={(e) => setEdit((c) => ({ ...c, slug: e.target.value }))}
+                            placeholder="slug"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <input
+                            value={edit.seo_slug}
+                            onChange={(e) => setEdit((c) => ({ ...c, seo_slug: e.target.value }))}
+                            placeholder="seo_slug"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <select
+                            value={edit.type}
+                            onChange={(e) => setEdit((c) => ({ ...c, type: e.target.value }))}
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          >
+                            {productTypes.map((type) => (
+                              <option key={type.id} value={type.type}>
+                                {type.type}
+                              </option>
+                            ))}
+                            {!productTypes.some((type) => type.type === edit.type) && (
+                              <option value={edit.type}>{edit.type || 'sin-type'}</option>
+                            )}
+                          </select>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              value={edit.price_cents}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, price_cents: e.target.value }))
+                              }
+                              placeholder="price_cents"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.stock}
+                              onChange={(e) => setEdit((c) => ({ ...c, stock: e.target.value }))}
+                              placeholder="stock"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                                  Galeria
+                                </p>
+                                <p className="mt-1 text-xs text-zinc-400">
+                                  Hasta 3 imagenes. La primera sera la portada principal.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={addEmptyEditImage}
+                                disabled={editImages.length >= 3}
+                                className={cn(
+                                  'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
+                                  editImages.length >= 3
+                                    ? 'cursor-not-allowed bg-surface200 text-zinc-500'
+                                    : 'bg-white/10 text-zinc-100 hover:bg-white/15'
+                                )}
+                              >
+                                <ImagePlus className="h-4 w-4" />
+                                Agregar imagen
+                              </button>
+                            </div>
 
-        {view === 'reviews' && <ReviewsManager products={productOptions} />}
-
-        {view === 'orders' && <OrdersManager />}
-
-        {view === 'shipments' && <ShipmentsManager />}
-
-        {view === 'connections' && (
-          <div className="mx-auto w-full max-w-5xl space-y-4">
-            <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-              <h2 className="text-xl font-semibold">Conexiones</h2>
-              <p className="mt-2 text-sm text-zinc-500">URL actual: {window.location.origin}</p>
-              <p className="mt-2 text-sm text-zinc-500">API actual: {apiProxyTarget}</p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Estado health:{' '}
-                {conn.checking ? 'verificando...' : connected ? 'OK' : 'con incidencias'}
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-                <p className="text-xs uppercase text-zinc-500">R2</p>
-                <p
-                  className={cn(
-                    'mt-2 text-sm font-semibold',
-                    conn.r2.ok ? 'text-emerald-300' : 'text-rose-300'
+                            <div className="mt-3 space-y-3">
+                              {editImages.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-zinc-500">
+                                  Este producto aun no tiene imagenes.
+                                </div>
+                              ) : (
+                                editImages.map((image, index) => (
+                                  <div
+                                    key={image.id}
+                                    className="grid gap-3 rounded-xl border border-white/10 bg-surface100/70 p-3"
+                                  >
+                                    <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)]">
+                                      <img
+                                        src={getEditImagePreviewUrl(image)}
+                                        alt={image.alt_text || `Imagen ${index + 1}`}
+                                        className="aspect-square w-full rounded-lg object-cover"
+                                        onError={(e) => err(`edit image preview ${image.id}`, e)}
+                                      />
+                                      <div className="space-y-2">
+                                        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                                          Slot {index + 1}
+                                        </p>
+                                        <input
+                                          value={image.image_key}
+                                          onChange={(e) =>
+                                            updateEditImage(image.id, { image_key: e.target.value })
+                                          }
+                                          placeholder="image_key"
+                                          className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+                                        />
+                                        <input
+                                          value={image.alt_text}
+                                          onChange={(e) =>
+                                            updateEditImage(image.id, { alt_text: e.target.value })
+                                          }
+                                          placeholder="Texto alternativo"
+                                          className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+                                        />
+                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                          <button
+                                            type="button"
+                                            onClick={() => triggerEditFilePicker(image.id)}
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
+                                          >
+                                            <UploadCloud className="h-4 w-4" />
+                                            Reemplazar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => moveEditImage(index, index - 1)}
+                                            disabled={index === 0}
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                                          >
+                                            <ChevronLeft className="h-4 w-4" />
+                                            Antes
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => moveEditImage(index, index + 1)}
+                                            disabled={index === editImages.length - 1}
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-surface200 disabled:text-zinc-500"
+                                          >
+                                            Despues
+                                            <ChevronRight className="h-4 w-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeEditImage(image.id)}
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-200"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                            Quitar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                          <input
+                            value={edit.sku}
+                            onChange={(e) => setEdit((c) => ({ ...c, sku: e.target.value }))}
+                            placeholder="sku"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <input
+                            value={edit.brand}
+                            onChange={(e) => setEdit((c) => ({ ...c, brand: e.target.value }))}
+                            placeholder="brand"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <textarea
+                            value={edit.short_desc}
+                            rows={2}
+                            onChange={(e) => setEdit((c) => ({ ...c, short_desc: e.target.value }))}
+                            placeholder="short_desc"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <textarea
+                            value={edit.description}
+                            rows={3}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, description: e.target.value }))
+                            }
+                            placeholder="description"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              value={edit.material}
+                              onChange={(e) => setEdit((c) => ({ ...c, material: e.target.value }))}
+                              placeholder="material"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.base_metal}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, base_metal: e.target.value }))
+                              }
+                              placeholder="base_metal"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.finish_text}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, finish_text: e.target.value }))
+                              }
+                              placeholder="finish_text"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.main_color}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, main_color: e.target.value }))
+                              }
+                              placeholder="main_color"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <textarea
+                            value={edit.care_instructions}
+                            rows={2}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, care_instructions: e.target.value }))
+                            }
+                            placeholder="care_instructions"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <textarea
+                            value={edit.package_includes}
+                            rows={2}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, package_includes: e.target.value }))
+                            }
+                            placeholder="package_includes"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              value={edit.shipping_time_min_days}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, shipping_time_min_days: e.target.value }))
+                              }
+                              placeholder="shipping_time_min_days"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.shipping_time_max_days}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, shipping_time_max_days: e.target.value }))
+                              }
+                              placeholder="shipping_time_max_days"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.return_window_days}
+                              onChange={(e) =>
+                                setEdit((c) => ({ ...c, return_window_days: e.target.value }))
+                              }
+                              placeholder="return_window_days"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={edit.sort}
+                              onChange={(e) => setEdit((c) => ({ ...c, sort: e.target.value }))}
+                              placeholder="sort"
+                              className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <input
+                            value={edit.currency}
+                            onChange={(e) =>
+                              setEdit((c) => ({ ...c, currency: e.target.value.toUpperCase() }))
+                            }
+                            placeholder="currency"
+                            className="w-full rounded-xl border border-white/5 bg-surface100 px-3 py-2 text-sm"
+                          />
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.hypoallergenic}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, hypoallergenic: e.target.checked }))
+                                }
+                              />
+                              hypoallergenic
+                            </label>
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.gift_ready}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, gift_ready: e.target.checked }))
+                                }
+                              />
+                              gift_ready
+                            </label>
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.is_featured}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, is_featured: e.target.checked }))
+                                }
+                              />
+                              is_featured
+                            </label>
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.is_bestseller}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, is_bestseller: e.target.checked }))
+                                }
+                              />
+                              is_bestseller
+                            </label>
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.is_new_arrival}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, is_new_arrival: e.target.checked }))
+                                }
+                              />
+                              is_new_arrival
+                            </label>
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-surface100 px-3 py-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={edit.is_active}
+                                onChange={(e) =>
+                                  setEdit((c) => ({ ...c, is_active: e.target.checked }))
+                                }
+                              />
+                              is_active
+                            </label>
+                          </div>
+                          <p className="text-xs text-zinc-500">
+                            Canonica preview: /producto/{slugify(edit.seo_slug || edit.slug)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-shrink-0 gap-2 border-t border-white/5 p-4">
+                        <button
+                          onClick={() => void saveEdit()}
+                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-black hover:bg-brand/90"
+                        >
+                          <Save className="h-4 w-4" />
+                          Guardar cambios
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center p-6 text-center text-zinc-500">
+                      <div className="mb-4 rounded-full bg-white/5 p-4">
+                        <PackagePlus className="h-8 w-8 text-zinc-400" />
+                      </div>
+                      <p className="text-sm">Selecciona un producto de la lista</p>
+                    </div>
                   )}
-                >
-                  {conn.r2.ok ? 'Conectado' : 'Con error'}
-                </p>
-                {conn.r2.error && <p className="mt-2 text-xs text-zinc-400">{conn.r2.error}</p>}
+                </div>
               </div>
-              <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-                <p className="text-xs uppercase text-zinc-500">D1</p>
-                <p
-                  className={cn(
-                    'mt-2 text-sm font-semibold',
-                    conn.d1.ok ? 'text-emerald-300' : 'text-rose-300'
-                  )}
-                >
-                  {conn.d1.ok ? 'Conectado' : 'Con error'}
-                </p>
-                {conn.d1.error && <p className="mt-2 text-xs text-zinc-400">{conn.d1.error}</p>}
-              </div>
-              <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase text-zinc-500">Envia</p>
+            )}
+
+            {view === 'variants' && <VariantsManager products={productOptions} />}
+
+            {view === 'reviews' && <ReviewsManager products={productOptions} />}
+
+            {view === 'orders' && <OrdersManager />}
+
+            {view === 'shipments' && <ShipmentsManager />}
+
+            {view === 'connections' && (
+              <div className="mx-auto w-full max-w-5xl space-y-4">
+                <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                  <h2 className="text-xl font-semibold">Conexiones</h2>
+                  <p className="mt-2 text-sm text-zinc-500">URL actual: {window.location.origin}</p>
+                  <p className="mt-2 text-sm text-zinc-500">API actual: {apiProxyTarget}</p>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    Estado health:{' '}
+                    {conn.checking ? 'verificando...' : connected ? 'OK' : 'con incidencias'}
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-xs uppercase text-zinc-500">R2</p>
                     <p
                       className={cn(
                         'mt-2 text-sm font-semibold',
-                        conn.envia.configured &&
-                          conn.envia.shipping.ok &&
-                          conn.envia.queries.ok &&
-                          conn.envia.geocodes.ok
-                          ? 'text-emerald-300'
-                          : 'text-amber-300'
+                        conn.r2.ok ? 'text-emerald-300' : 'text-rose-300'
                       )}
                     >
-                      {conn.envia.configured ? `Modo ${conn.envia.mode}` : 'Sin configurar'}
+                      {conn.r2.ok ? 'Conectado' : 'Con error'}
                     </p>
+                    {conn.r2.error && <p className="mt-2 text-xs text-zinc-400">{conn.r2.error}</p>}
                   </div>
-                  <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] text-zinc-400">
-                    {conn.envia.checked_at || 'sin check'}
-                  </span>
+                  <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-xs uppercase text-zinc-500">D1</p>
+                    <p
+                      className={cn(
+                        'mt-2 text-sm font-semibold',
+                        conn.d1.ok ? 'text-emerald-300' : 'text-rose-300'
+                      )}
+                    >
+                      {conn.d1.ok ? 'Conectado' : 'Con error'}
+                    </p>
+                    {conn.d1.error && <p className="mt-2 text-xs text-zinc-400">{conn.d1.error}</p>}
+                  </div>
+                  <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase text-zinc-500">Envia</p>
+                        <p
+                          className={cn(
+                            'mt-2 text-sm font-semibold',
+                            conn.envia.configured &&
+                              conn.envia.shipping.ok &&
+                              conn.envia.queries.ok &&
+                              conn.envia.geocodes.ok
+                              ? 'text-emerald-300'
+                              : 'text-amber-300'
+                          )}
+                        >
+                          {conn.envia.configured ? `Modo ${conn.envia.mode}` : 'Sin configurar'}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] text-zinc-400">
+                        {conn.envia.checked_at || 'sin check'}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2 text-xs text-zinc-400">
+                      <p>
+                        Shipping:{' '}
+                        <span
+                          className={conn.envia.shipping.ok ? 'text-emerald-300' : 'text-rose-300'}
+                        >
+                          {conn.envia.shipping.ok ? 'ok' : conn.envia.shipping.error || 'error'}
+                        </span>
+                      </p>
+                      <p>
+                        Queries:{' '}
+                        <span
+                          className={conn.envia.queries.ok ? 'text-emerald-300' : 'text-rose-300'}
+                        >
+                          {conn.envia.queries.ok ? 'ok' : conn.envia.queries.error || 'error'}
+                        </span>
+                      </p>
+                      <p>
+                        Geocodes:{' '}
+                        <span
+                          className={conn.envia.geocodes.ok ? 'text-emerald-300' : 'text-rose-300'}
+                        >
+                          {conn.envia.geocodes.ok ? 'ok' : conn.envia.geocodes.error || 'error'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 space-y-2 text-xs text-zinc-400">
-                  <p>
-                    Shipping:{' '}
-                    <span className={conn.envia.shipping.ok ? 'text-emerald-300' : 'text-rose-300'}>
-                      {conn.envia.shipping.ok ? 'ok' : conn.envia.shipping.error || 'error'}
-                    </span>
+                <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+                  <p className="text-xs uppercase text-zinc-500">Compatibilidad de esquema</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                      products_enriched:{' '}
+                      <span
+                        className={
+                          conn.schema.products_enriched ? 'text-emerald-300' : 'text-rose-300'
+                        }
+                      >
+                        {conn.schema.products_enriched ? 'listo' : 'pendiente'}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                      product_variants:{' '}
+                      <span
+                        className={
+                          conn.schema.product_variants ? 'text-emerald-300' : 'text-rose-300'
+                        }
+                      >
+                        {conn.schema.product_variants ? 'listo' : 'pendiente'}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                      product_reviews:{' '}
+                      <span
+                        className={
+                          conn.schema.product_reviews ? 'text-emerald-300' : 'text-rose-300'
+                        }
+                      >
+                        {conn.schema.product_reviews ? 'listo' : 'pendiente'}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                      order_shipments:{' '}
+                      <span
+                        className={
+                          conn.schema.order_shipments ? 'text-emerald-300' : 'text-rose-300'
+                        }
+                      >
+                        {conn.schema.order_shipments ? 'listo' : 'pendiente'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 text-sm text-zinc-400">
+                  <p className="flex items-center gap-2">
+                    <Wifi className="h-4 w-4" />
+                    Para telefono usa la IP LAN real (ejemplo: 192.168.100.4), no la host-only
+                    192.168.56.1.
                   </p>
-                  <p>
-                    Queries:{' '}
-                    <span className={conn.envia.queries.ok ? 'text-emerald-300' : 'text-rose-300'}>
-                      {conn.envia.queries.ok ? 'ok' : conn.envia.queries.error || 'error'}
-                    </span>
-                  </p>
-                  <p>
-                    Geocodes:{' '}
-                    <span className={conn.envia.geocodes.ok ? 'text-emerald-300' : 'text-rose-300'}>
-                      {conn.envia.geocodes.ok ? 'ok' : conn.envia.geocodes.error || 'error'}
-                    </span>
+                  <p className="mt-2 flex items-center gap-2">
+                    <WifiOff className="h-4 w-4" />
+                    Si no abre, revisa firewall para puertos 5173 y 8787.
                   </p>
                 </div>
               </div>
-            </div>
-            <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4">
-              <p className="text-xs uppercase text-zinc-500">Compatibilidad de esquema</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
-                  products_enriched:{' '}
-                  <span
-                    className={conn.schema.products_enriched ? 'text-emerald-300' : 'text-rose-300'}
-                  >
-                    {conn.schema.products_enriched ? 'listo' : 'pendiente'}
-                  </span>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
-                  product_variants:{' '}
-                  <span
-                    className={conn.schema.product_variants ? 'text-emerald-300' : 'text-rose-300'}
-                  >
-                    {conn.schema.product_variants ? 'listo' : 'pendiente'}
-                  </span>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
-                  product_reviews:{' '}
-                  <span
-                    className={conn.schema.product_reviews ? 'text-emerald-300' : 'text-rose-300'}
-                  >
-                    {conn.schema.product_reviews ? 'listo' : 'pendiente'}
-                  </span>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
-                  order_shipments:{' '}
-                  <span
-                    className={conn.schema.order_shipments ? 'text-emerald-300' : 'text-rose-300'}
-                  >
-                    {conn.schema.order_shipments ? 'listo' : 'pendiente'}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-4 text-sm text-zinc-400">
-              <p className="flex items-center gap-2">
-                <Wifi className="h-4 w-4" />
-                Para telefono usa la IP LAN real (ejemplo: 192.168.100.4), no la host-only
-                192.168.56.1.
-              </p>
-              <p className="mt-2 flex items-center gap-2">
-                <WifiOff className="h-4 w-4" />
-                Si no abre, revisa firewall para puertos 5173 y 8787.
-              </p>
-            </div>
-          </div>
-        )}
-      </main>
+            )}
+          </main>
+        </div>
+      </div>
     </div>
   )
 }

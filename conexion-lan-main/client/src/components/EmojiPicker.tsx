@@ -1,39 +1,33 @@
 const EMOJIS = [
-  "😀",
-  "😄",
-  "😂",
-  "🥲",
-  "😍",
-  "😎",
-  "🤝",
-  "✅",
-  "⚠️",
-  "🔥",
-  "💡",
-  "📌",
-  "📎",
-  "🧠",
-  "👀",
-  "🙏",
-  "🎯",
-  "🚀",
-  "❤️",
-  "👍",
-  "👎",
-  "😅",
-  "😤",
-  "😭",
-  "🤯",
-];
+  '😀',
+  '😄',
+  '😂',
+  '🥲',
+  '😍',
+  '😎',
+  '🤝',
+  '✅',
+  '⚠️',
+  '🔥',
+  '💡',
+  '📌',
+  '📎',
+  '🧠',
+  '👀',
+  '🙏',
+  '🎯',
+  '🚀',
+  '❤️',
+  '👍',
+  '👎',
+  '😅',
+  '😤',
+  '😭',
+  '🤯'
+]
 
-export function EmojiPicker({
-  open,
-  onPick,
-}: {
-  open: boolean;
-  onPick: (emoji: string) => void;
-}) {
-  if (!open) return null;
+export function EmojiPicker({ open, onPick }: { open: boolean; onPick: (emoji: string) => void }) {
+  if (!open) return null
 
   return (
     <div className="absolute bottom-14 right-0 z-20 w-[240px] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl sm:right-20">
@@ -50,5 +44,5 @@ export function EmojiPicker({
         ))}
       </div>
     </div>
-  );
+  )
 }

@@ -5,16 +5,16 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#D4AF37',
-          dark: '#AA8C2C',
-          light: '#F3E5AB'
+          DEFAULT: '#C8A97E',
+          dark: '#A88962',
+          light: '#E6D3B6'
         },
-        surface: '#121212',
-        surface100: '#1E1E1E',
-        surface200: '#2C2C2C'
+        surface: '#1B1714',
+        surface100: '#24201C',
+        surface200: '#352F28'
       },
       boxShadow: {
-        glow: '0 16px 48px rgba(212, 175, 55, 0.16)'
+        glow: '0 18px 48px rgba(200, 169, 126, 0.22)'
       }
     }
   },

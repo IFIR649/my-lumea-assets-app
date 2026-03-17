@@ -458,12 +458,13 @@ async function tryJsonPaths(
   baseUrl: string,
   paths: string[],
   init: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
+  retryOn: (status: number) => boolean = (s) => s === 404
 ): Promise<RequestResult> {
   let lastResult: RequestResult | null = null
   for (const path of paths) {
     const result = await fetchJson(`${baseUrl}${path}`, init, timeoutMs)
-    if (result.status === 404) {
+    if (retryOn(result.status)) {
       lastResult = result
       continue
     }
@@ -1365,7 +1366,8 @@ export async function trackShipment(
     config.shippingBaseUrl,
     TRACK_PATHS,
     { method: 'POST', headers, body: JSON.stringify(payload) },
-    config.timeoutMs
+    config.timeoutMs,
+    (status) => status >= 400
   )
 
   if (!result.ok) {

@@ -5934,17 +5934,36 @@ async function buildLabelRequestPayloads(
 }
 
 function buildTrackingRequestPayload(shipment: Record<string, unknown>): Record<string, unknown> {
-  const tracking_number = cleanText(shipment.tracking_number)
+  const tracking_number =
+    cleanText(shipment.tracking_number) ||
+    cleanText(shipment.trackingNumber) ||
+    cleanText(shipment.guide_number) ||
+    cleanText(shipment.guideNumber)
   const carrier = cleanText(shipment.carrier)
   if (!tracking_number) {
     throw new Error('No hay tracking_number para sincronizar este envio.')
   }
+
+  const rawTrackingCandidates = [
+    tracking_number,
+    ...(Array.isArray(shipment.trackingNumbers) ? shipment.trackingNumbers : []),
+    ...(Array.isArray(shipment.tracking_numbers) ? shipment.tracking_numbers : []),
+    ...(Array.isArray(shipment.guideNumbers) ? shipment.guideNumbers : []),
+    ...(Array.isArray(shipment.guide_numbers) ? shipment.guide_numbers : [])
+  ]
+  const trackingNumbers = [
+    ...new Set(rawTrackingCandidates.map((value) => cleanText(value)).filter(Boolean))
+  ]
 
   return {
     tracking_number,
     trackingNumber: tracking_number,
     guide_number: tracking_number,
     guideNumber: tracking_number,
+    trackingNumbers,
+    tracking_numbers: trackingNumbers,
+    guideNumbers: trackingNumbers,
+    guide_numbers: trackingNumbers,
     carrier,
     carrier_name: carrier
   }

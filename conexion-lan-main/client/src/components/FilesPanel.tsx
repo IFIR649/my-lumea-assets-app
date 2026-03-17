@@ -1,72 +1,72 @@
-import { useEffect, useMemo, useState } from "react";
-import { api, type FileItem } from "../lib/api";
-import { Card, CardBody, CardHeader } from "./Card";
-import { Dropzone } from "./Dropzone";
+import { useEffect, useMemo, useState } from 'react'
+import { api, type FileItem } from '../lib/api'
+import { Card, CardBody, CardHeader } from './Card'
+import { Dropzone } from './Dropzone'
 
 function fmt(ts: number | string) {
-  const d = new Date(ts);
-  return d.toLocaleString();
+  const d = new Date(ts)
+  return d.toLocaleString()
 }
 
 function fmtBytes(bytes: number) {
-  const units = ["B", "KB", "MB", "GB"];
-  let v = bytes;
-  let i = 0;
+  const units = ['B', 'KB', 'MB', 'GB']
+  let v = bytes
+  let i = 0
   while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
+    v /= 1024
+    i++
   }
-  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 function isImage(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  return ["jpg", "jpeg", "png", "gif", "webp"].includes(ext || "");
+  const ext = filename.split('.').pop()?.toLowerCase()
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')
 }
 
 export function FilesPanel({
-  toast,
+  toast
 }: {
-  toast: (kind: "success" | "error" | "info", msg: string) => void;
+  toast: (kind: 'success' | 'error' | 'info', msg: string) => void
 }) {
-  const [loading, setLoading] = useState(true);
-  const [busyUpload, setBusyUpload] = useState(false);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true)
+  const [busyUpload, setBusyUpload] = useState(false)
+  const [files, setFiles] = useState<FileItem[]>([])
+  const [query, setQuery] = useState('')
 
   async function refresh() {
-    setLoading(true);
+    setLoading(true)
     try {
-      const data = await api.listFiles();
-      setFiles(data);
+      const data = await api.listFiles()
+      setFiles(data)
     } catch (e: any) {
-      toast("error", `No pude cargar archivos: ${e?.message ?? "error"}`);
+      toast('error', `No pude cargar archivos: ${e?.message ?? 'error'}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    refresh();
+    refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return files;
-    return files.filter((f) => f.originalName.toLowerCase().includes(q));
-  }, [files, query]);
+    const q = query.trim().toLowerCase()
+    if (!q) return files
+    return files.filter((f) => f.originalName.toLowerCase().includes(q))
+  }, [files, query])
 
   async function upload(file: File) {
-    setBusyUpload(true);
+    setBusyUpload(true)
     try {
-      const meta = await api.uploadFile(file);
-      setFiles((prev) => [meta, ...prev]);
-      toast("success", "Archivo subido.");
+      const meta = await api.uploadFile(file)
+      setFiles((prev) => [meta, ...prev])
+      toast('success', 'Archivo subido.')
     } catch (e: any) {
-      toast("error", `No pude subir: ${e?.message ?? "error"}`);
+      toast('error', `No pude subir: ${e?.message ?? 'error'}`)
     } finally {
-      setBusyUpload(false);
+      setBusyUpload(false)
     }
   }
 
@@ -80,7 +80,8 @@ export function FilesPanel({
         <CardBody>
           <Dropzone onFile={upload} disabled={busyUpload} />
           <div className="mt-3 text-xs text-slate-500">
-            *Privacidad: Los archivos expiran automaticamente en el servidor para no dejar rastro permanente.
+            *Privacidad: Los archivos expiran automaticamente en el servidor para no dejar rastro
+            permanente.
           </div>
         </CardBody>
       </Card>
@@ -88,7 +89,7 @@ export function FilesPanel({
       <Card>
         <CardHeader
           title="Archivos compartidos"
-          subtitle={loading ? "Cargando..." : `${files.length} total`}
+          subtitle={loading ? 'Cargando...' : `${files.length} total`}
           right={
             <button
               className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
@@ -114,7 +115,7 @@ export function FilesPanel({
               </div>
             ) : (
               filtered.map((f) => {
-                const image = isImage(f.originalName);
+                const image = isImage(f.originalName)
                 return (
                   <div
                     key={f.id}
@@ -137,9 +138,11 @@ export function FilesPanel({
                       )}
 
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-900">{f.originalName}</div>
+                        <div className="truncate text-sm font-semibold text-slate-900">
+                          {f.originalName}
+                        </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {f.clientName ? `por ${f.clientName}` : "por Anonimo"}
+                          {f.clientName ? `por ${f.clientName}` : 'por Anonimo'}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                           <span className="font-medium">{fmtBytes(f.size)}</span>
@@ -157,12 +160,12 @@ export function FilesPanel({
                       Descargar
                     </a>
                   </div>
-                );
+                )
               })
             )}
           </div>
         </CardBody>
       </Card>
     </div>
-  );
+  )
 }

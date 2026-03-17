@@ -53,7 +53,9 @@ type AppAPI = {
   selectShipmentLabelsFolder: () => Promise<string | null>
   readDirectory: (folderPath: string) => Promise<LocalImage[]>
   uploadFile: (fileData: UploadFilePayload) => Promise<UploadFileResult>
-  ensureShipmentLabelFiles: (payload: EnsureShipmentLabelFilesPayload) => Promise<EnsureShipmentLabelFilesResult>
+  ensureShipmentLabelFiles: (
+    payload: EnsureShipmentLabelFilesPayload
+  ) => Promise<EnsureShipmentLabelFilesResult>
   clearShipmentLabelFiles: () => Promise<LocalFileActionResult>
   openLocalFile: (filePath: string) => Promise<LocalFileActionResult>
   showItemInFolder: (filePath: string) => Promise<LocalFileActionResult>

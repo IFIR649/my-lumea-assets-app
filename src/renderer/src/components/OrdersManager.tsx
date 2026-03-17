@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  AlertCircle,
-  ArrowLeft,
-  ArrowRight,
-  Eye,
-  RefreshCw,
-  Save,
-  Search,
-  X
-} from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Eye, RefreshCw, Save, Search, X } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 type Msg = { type: 'error' | 'success' | 'info'; text: string } | null
@@ -175,17 +166,6 @@ function statusLabel(status: DisplayStatus): string {
   return 'Pagado'
 }
 
-function statusClass(status: DisplayStatus): string {
-  if (status === 'cancelado') return 'bg-rose-500/15 text-rose-200 border-rose-400/35'
-  if (status === 'cancelado_parcial') return 'bg-amber-400/15 text-amber-100 border-amber-300/35'
-  if (status === 'perdido') return 'bg-orange-500/15 text-orange-200 border-orange-400/35'
-  if (status === 'pendiente_pago') return 'bg-gold/10 text-brand border-brand/30'
-  if (status === 'preparando_envio') return 'bg-amber-500/15 text-amber-200 border-amber-400/35'
-  if (status === 'en_camino') return 'bg-sky-500/15 text-sky-200 border-sky-400/35'
-  if (status === 'entregado') return 'bg-emerald-500/15 text-emerald-200 border-emerald-400/35'
-  return 'bg-zinc-500/15 text-zinc-200 border-zinc-400/35'
-}
-
 function buildQuery(page: number, filters: OrderFilters): string {
   const params = new URLSearchParams()
   params.set('page', String(page))
@@ -263,6 +243,7 @@ export default function OrdersManager(): React.JSX.Element {
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null)
+
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingDetail, setSavingDetail] = useState(false)
   const [detailMsg, setDetailMsg] = useState<Msg>(null)
@@ -355,7 +336,9 @@ export default function OrdersManager(): React.JSX.Element {
     setDetailMsg(null)
     setLoadingDetail(true)
     try {
-      const data = await requestJson<OrderDetailResponse>(`/api/orders/${encodeURIComponent(orderId)}`)
+      const data = await requestJson<OrderDetailResponse>(
+        `/api/orders/${encodeURIComponent(orderId)}`
+      )
       if (!data.success || !data.order) {
         throw new Error(data.error || 'No se pudo obtener el detalle.')
       }
@@ -415,14 +398,17 @@ export default function OrdersManager(): React.JSX.Element {
     setDetailMsg({ type: 'info', text: 'Guardando cambios...' })
 
     try {
-      const data = await requestJson<OrderDetailResponse>(`/api/orders/${encodeURIComponent(selectedOrderId)}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${normalizedToken}`
-        },
-        body: JSON.stringify(payload)
-      })
+      const data = await requestJson<OrderDetailResponse>(
+        `/api/orders/${encodeURIComponent(selectedOrderId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${normalizedToken}`
+          },
+          body: JSON.stringify(payload)
+        }
+      )
       if (!data.success || !data.order) throw new Error(data.error || 'No se pudo guardar.')
 
       setSelectedOrder(data.order)
@@ -447,485 +433,419 @@ export default function OrdersManager(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full flex-col gap-4 overflow-hidden xl:flex-row">
+    <div className="relative flex h-[calc(100vh-80px)] w-full flex-col gap-6 overflow-hidden rounded-[32px] border border-white/10 bg-surface/80 p-6 text-zinc-100 font-sans shadow-2xl xl:flex-row">
+      {/* Toast Messages */}
       {msg && (
         <div
           className={cn(
-            'flex shrink-0 items-center gap-3 rounded-2xl px-4 py-3 text-sm',
-            msg.type === 'error' && 'bg-rose-500/10 text-rose-200',
-            msg.type === 'success' && 'bg-emerald-500/10 text-emerald-200',
-            msg.type === 'info' && 'bg-sky-500/10 text-sky-200'
+            'absolute right-8 top-8 z-50 flex max-w-sm items-center gap-3 rounded-2xl border px-4 py-3 text-sm shadow-xl',
+            msg.type === 'error' && 'border-rose-500/30 bg-rose-500/10 text-rose-200',
+            msg.type === 'success' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+            msg.type === 'info' && 'border-sky-500/30 bg-sky-500/10 text-sky-200'
           )}
         >
           {msg.type === 'error' ? (
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="h-5 w-5" />
           ) : (
-            <RefreshCw className={cn('h-4 w-4', msg.type === 'info' && 'animate-spin')} />
+            <RefreshCw className={cn('h-5 w-5', msg.type === 'info' && 'animate-spin')} />
           )}
           <span>{msg.text}</span>
         </div>
       )}
 
-      {/* MASTER: Columna izquierda (Lista de Órdenes) */}
-      <div className="flex flex-shrink-0 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] xl:w-1/3 xl:min-w-[400px]">
-        {/* Buscador y Filtros fijos arriba */}
-        <div className="shrink-0 border-b border-white/5 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold">Pedidos</h2>
-            <p className="text-sm text-zinc-400">Ultimos 10 por pagina con filtros avanzados.</p>
+      {/* LEFT COLUMN: LIST */}
+      <div className="flex w-full flex-shrink-0 flex-col overflow-hidden rounded-[24px] border border-white/10 bg-surface100 xl:w-[400px]">
+        {/* Advanced Filters Header */}
+        <div className="p-5 border-b border-white/[0.04] space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-medium tracking-wide">Orders</h2>
+            <button
+              onClick={() => setReloadKey((v) => v + 1)}
+              className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-xs font-semibold transition-colors flex items-center gap-2"
+            >
+              <RefreshCw className={cn('w-3.5 h-3.5', loadingOrders && 'animate-spin')} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((value) => value + 1)}
-            className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold"
-          >
-            <RefreshCw className={cn('h-4 w-4', loadingOrders && 'animate-spin')} />
-            Recargar
-          </button>
-        </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <label className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input
               value={draftFilters.q}
-              onChange={(event) => setDraftFilters((prev) => ({ ...prev, q: event.target.value }))}
-              placeholder="Buscar ID/orden"
-              className="w-full rounded-xl border border-white/10 bg-surface100 py-2.5 pl-9 pr-3 text-sm"
+              onChange={(e) => setDraftFilters((p) => ({ ...p, q: e.target.value }))}
+              placeholder="Search ID"
+              className="w-full rounded-full border border-white/10 bg-black/30 py-2.5 pl-10 pr-4 text-sm transition-colors focus:outline-none focus:border-brand/50"
             />
-          </label>
+          </div>
 
-          <select
-            value={draftFilters.status}
-            onChange={(event) =>
-              setDraftFilters((prev) => ({
-                ...prev,
-                status: event.target.value as OrderFilters['status']
-              }))
-            }
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          >
-            <option value="">Todos los estados</option>
-            <option value="pendiente_pago">Pendiente de pago</option>
-            <option value="pagado">Pagado</option>
-            <option value="preparando_envio">Preparando envio</option>
-            <option value="en_camino">En camino</option>
-            <option value="cancelado_parcial">Cancelado parcial</option>
-            <option value="entregado">Entregado</option>
-            <option value="cancelado">Cancelado</option>
-            <option value="perdido">Perdido</option>
-          </select>
+          <div className="flex gap-2 text-xs overflow-x-auto custom-scrollbar pb-1">
+            <select
+              value={draftFilters.status}
+              onChange={(e) =>
+                setDraftFilters((p) => ({ ...p, status: e.target.value as OrderFilters['status'] }))
+              }
+              className="bg-black/40 border border-white/5 rounded-full px-3 py-1.5 focus:outline-none appearance-none min-w-[100px]"
+            >
+              <option value="">Status</option>
+              <option value="pendiente_pago">Pendiente</option>
+              <option value="pagado">Pagado</option>
+              <option value="preparando_envio">Preparando</option>
+              <option value="en_camino">En camino</option>
+              <option value="entregado">Entregado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            <input
+              value={draftFilters.date_from}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, date_from: e.target.value }))}
+              type="date"
+              className="bg-black/40 border border-white/5 rounded-full px-3 py-1.5 text-xs focus:outline-none dark:[color-scheme:dark]"
+            />
+            <input
+              value={draftFilters.date_to}
+              onChange={(e) => setDraftFilters((p) => ({ ...p, date_to: e.target.value }))}
+              type="date"
+              className="bg-black/40 border border-white/5 rounded-full px-3 py-1.5 text-xs focus:outline-none dark:[color-scheme:dark]"
+            />
+          </div>
 
-          <input
-            value={draftFilters.amount_min}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, amount_min: event.target.value }))}
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="Monto min MXN"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.amount_max}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, amount_max: event.target.value }))}
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="Monto max MXN"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.date_from}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, date_from: event.target.value }))}
-            type="date"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.date_to}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, date_to: event.target.value }))}
-            type="date"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.qty_min}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, qty_min: event.target.value }))}
-            type="number"
-            min="0"
-            step="1"
-            placeholder="Unidades min"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.qty_max}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, qty_max: event.target.value }))}
-            type="number"
-            min="0"
-            step="1"
-            placeholder="Unidades max"
-            className="rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={draftFilters.product_q}
-            onChange={(event) => setDraftFilters((prev) => ({ ...prev, product_q: event.target.value }))}
-            placeholder="Producto en la orden"
-            className="md:col-span-2 lg:col-span-2 rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-
-          <input
-            value={adminToken}
-            onChange={(event) => setAdminToken(normalizeAdminToken(event.target.value))}
-            placeholder="Admin token (Bearer)"
-            className="md:col-span-2 lg:col-span-2 rounded-xl border border-white/10 bg-surface100 px-3 py-2.5 text-sm"
-          />
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={applyFilters} className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-black">
-            Aplicar
-          </button>
-          <button type="button" onClick={clearFilters} className="rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold">
-            Limpiar
-          </button>
-        </div>
-        </div>
-        
-        {/* Lista scrolleable */}
-        <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-zinc-400">Resultados: {loadingOrders ? '...' : orders.length}</p>
           <div className="flex items-center gap-2">
             <button
-              type="button"
-              disabled={!hasPrev || loadingOrders}
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold',
-                !hasPrev || loadingOrders ? 'cursor-not-allowed bg-white/5 text-zinc-500' : 'bg-white/10 text-zinc-200'
-              )}
+              onClick={applyFilters}
+              className="rounded-full bg-brand px-4 py-1.5 text-xs font-medium text-black transition-colors hover:bg-brand/90"
             >
-              <ArrowLeft className="h-4 w-4" />
-              Prev
+              Apply
             </button>
-            <span className="rounded-lg bg-black/30 px-3 py-1.5 text-xs">Pag {page}</span>
             <button
-              type="button"
-              disabled={!hasNext || loadingOrders}
-              onClick={() => setPage((value) => value + 1)}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold',
-                !hasNext || loadingOrders ? 'cursor-not-allowed bg-white/5 text-zinc-500' : 'bg-white/10 text-zinc-200'
-              )}
+              onClick={clearFilters}
+              className="bg-white/5 hover:bg-white/10 rounded-full px-4 py-1.5 text-xs font-medium transition-colors text-zinc-300"
             >
-              Next
-              <ArrowRight className="h-4 w-4" />
+              Clear
             </button>
           </div>
         </div>
 
-        {loadingOrders ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
-            Cargando pedidos...
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
-            No hay pedidos para los filtros actuales.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orders.map((order) => (
-              <article 
-                key={order.id} 
+        {/* Order List */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+          {loadingOrders ? (
+            <p className="text-zinc-500 text-sm p-4 text-center">Loading...</p>
+          ) : orders.length === 0 ? (
+            <p className="text-zinc-500 text-sm p-4 text-center">No orders found.</p>
+          ) : (
+            orders.map((order) => (
+              <div
+                key={order.id}
                 onClick={() => void openOrderDetail(order.id)}
                 className={cn(
-                  "cursor-pointer rounded-2xl border p-4 transition-all hover:bg-white/5",
-                  selectedOrderId === order.id ? "border-brand bg-brand/5" : "border-white/10 bg-black/20"
+                  'p-4 rounded-2xl cursor-pointer transition-all border',
+                  selectedOrderId === order.id
+                    ? 'border-brand/35 bg-brand/15'
+                    : 'bg-black/20 border-white/[0.04] hover:bg-white/[0.04]'
                 )}
               >
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex justify-between items-start mb-2">
                   <div>
-                    <p className="text-sm font-semibold">{order.id}</p>
-                    <p className="text-xs text-zinc-500">{order.customer_email}</p>
+                    <p className="text-sm font-medium text-white">{order.id}</p>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      {order.customer_email || 'No email'}
+                    </p>
                   </div>
                   <span
                     className={cn(
-                      'inline-flex w-fit items-center rounded-lg border px-2.5 py-1 text-[11px] uppercase tracking-[0.12em]',
-                      statusClass(order.display_status)
+                      'px-2.5 py-1 rounded-[8px] text-[10px] font-medium uppercase tracking-wider border',
+                      order.display_status === 'pagado' || order.display_status === 'entregado'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : order.display_status === 'cancelado'
+                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                     )}
                   >
                     {statusLabel(order.display_status)}
                   </span>
                 </div>
-
-                <div className="mt-3 grid gap-2 text-xs text-zinc-400 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>Total: <span className="text-zinc-200">{formatMoney(order.total_amount_cents, order.currency)}</span></div>
-                  <div>Unidades: <span className="text-zinc-200">{order.units_total}</span></div>
-                  <div>Items: <span className="text-zinc-200">{order.items_count}</span></div>
-                  <div>Fecha: <span className="text-zinc-200">{formatDate(order.created_at)}</span></div>
+                <div className="flex items-end justify-between mt-4">
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
+                      Total
+                    </p>
+                    <p className="text-sm font-semibold text-white">
+                      {formatMoney(order.total_amount_cents, order.currency)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
+                      Date
+                    </p>
+                    <p className="text-xs text-zinc-300">
+                      {formatDate(order.created_at).split(',')[0]}
+                    </p>
+                  </div>
                 </div>
+              </div>
+            ))
+          )}
+        </div>
 
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    onClick={() => void openOrderDetail(order.id)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
-                  >
-                    <Eye className="h-4 w-4" />
-                    Ver mas info
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+        {/* Pagination Footer */}
+        <div className="p-4 border-t border-white/[0.04] flex items-center justify-between bg-black/20">
+          <button
+            disabled={!hasPrev || loadingOrders}
+            onClick={() => setPage((v) => Math.max(1, v - 1))}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs text-zinc-400 font-medium">Page {page}</span>
+          <button
+            disabled={!hasNext || loadingOrders}
+            onClick={() => setPage((v) => v + 1)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {/* DETAIL: Columna derecha (Detalle de la Orden) */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02]">
-        {selectedOrderId && activeOrder ? (
-          <div className="custom-scrollbar flex-1 overflow-y-auto p-6">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold">Detalle de pedido {selectedOrderId}</h3>
-              <button type="button" onClick={closeDetail} className="rounded-lg bg-white/10 p-2">
-                <X className="h-4 w-4" />
+      {/* RIGHT COLUMN: MAIN DETAIL */}
+      <div className="relative flex flex-1 flex-col overflow-hidden rounded-[24px] border border-white/10 bg-surface100">
+        {selectedOrderId && loadingDetail ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-transparent to-white/[0.01]">
+            <RefreshCw className="mb-4 h-8 w-8 animate-spin text-brand" />
+            <p className="text-zinc-500">Loading complete order details...</p>
+          </div>
+        ) : selectedOrderId && activeOrder ? (
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold mb-1">Order Details</h3>
+                <p className="text-zinc-400 text-sm">ID: {selectedOrderId}</p>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {detailMsg && (
               <div
                 className={cn(
-                  'mb-4 rounded-xl px-3 py-2 text-sm',
-                  detailMsg.type === 'error' && 'bg-rose-500/10 text-rose-200',
-                  detailMsg.type === 'success' && 'bg-emerald-500/10 text-emerald-200',
-                  detailMsg.type === 'info' && 'bg-sky-500/10 text-sky-200'
+                  'px-4 py-3 rounded-2xl text-sm border font-medium',
+                  detailMsg.type === 'error'
+                    ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                    : detailMsg.type === 'success'
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                      : 'bg-sky-500/10 text-sky-300 border-sky-500/30'
                 )}
               >
                 {detailMsg.text}
               </div>
             )}
 
-            {loadingDetail ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-zinc-400">
-                Cargando detalle...
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-black/30 rounded-2xl p-5 border border-white/[0.04]">
+                <p className="text-xs text-zinc-500 font-medium mb-1">Payment Status</p>
+                <p className="text-lg font-semibold text-white capitalize">{activeOrder.status}</p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  {statusLabel(activeOrder.display_status)}
+                </p>
               </div>
-            ) : !activeOrder ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-zinc-400">
-                No se pudo cargar el detalle de la orden.
+              <div className="bg-black/30 rounded-2xl p-5 border border-white/[0.04]">
+                <p className="text-xs text-zinc-500 font-medium mb-1">Total Amount</p>
+                <p className="text-lg font-semibold text-white">
+                  {formatMoney(activeOrder.total_amount_cents, activeOrder.currency)}
+                </p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  {activeOrder.summary.items_count} items
+                </p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="grid gap-2 text-sm md:grid-cols-2 lg:grid-cols-3">
-                    <p>ID: <span className="text-zinc-200">{activeOrder.id}</span></p>
-                    <p>Estado pago: <span className="text-zinc-200">{activeOrder.status}</span></p>
-                    <p>Estado visible: <span className="text-zinc-200">{statusLabel(activeOrder.display_status)}</span></p>
-                    <p>Total: <span className="text-zinc-200">{formatMoney(activeOrder.total_amount_cents, activeOrder.currency)}</span></p>
-                    <p>Creado: <span className="text-zinc-200">{formatDate(activeOrder.created_at)}</span></p>
-                    <p>Actualizado: <span className="text-zinc-200">{formatDate(activeOrder.updated_at)}</span></p>
-                  </div>
-                </section>
+              <div className="bg-black/30 rounded-2xl p-5 border border-white/[0.04]">
+                <p className="text-xs text-zinc-500 font-medium mb-1">Customer</p>
+                <p className="text-sm font-medium text-white truncate">
+                  {activeOrder.customer_name || 'No Name'}
+                </p>
+                <p className="text-xs text-zinc-500 truncate mt-1">{activeOrder.customer_email}</p>
+              </div>
+              <div className="bg-black/30 rounded-2xl p-5 border border-white/[0.04]">
+                <p className="text-xs text-zinc-500 font-medium mb-1">Created At</p>
+                <p className="text-sm font-medium text-white">
+                  {formatDate(activeOrder.created_at).split(',')[0]}
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  {formatDate(activeOrder.created_at).split(',')[1]}
+                </p>
+              </div>
+            </div>
 
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-zinc-400">Cliente y envio</h4>
-                  <div className="grid gap-2 text-sm md:grid-cols-2">
-                    <p>Email: <span className="text-zinc-200">{activeOrder.customer_email || '-'}</span></p>
-                    <p>Nombre: <span className="text-zinc-200">{activeOrder.customer_name || '-'}</span></p>
-                    <p>Telefono: <span className="text-zinc-200">{activeOrder.customer_phone || '-'}</span></p>
-                    <p>Moneda: <span className="text-zinc-200">{activeOrder.currency || 'MXN'}</span></p>
-                  </div>
-                  {activeOrder.shipping_address ? (
-                    <pre className="mt-3 overflow-auto rounded-xl border border-white/10 bg-black/25 p-3 text-xs text-zinc-300">
-                      {typeof activeOrder.shipping_address === 'string'
-                        ? activeOrder.shipping_address
-                        : JSON.stringify(activeOrder.shipping_address, null, 2)}
-                    </pre>
-                  ) : (
-                    <p className="mt-3 text-sm text-zinc-500">Sin direccion de envio registrada.</p>
-                  )}
-                </section>
+            {/* Edit Section */}
+            <div className="bg-black/20 rounded-3xl p-6 border border-white/[0.04]">
+              <div className="flex items-center justify-between mb-5">
+                <h4 className="text-sm font-semibold uppercase tracking-widest text-brand">
+                  Update Order
+                </h4>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={showToken ? 'text' : 'password'}
+                    value={adminToken}
+                    onChange={(e) => setAdminToken(normalizeAdminToken(e.target.value))}
+                    className="w-48 rounded-full border border-white/10 bg-black/30 px-4 py-1.5 text-xs focus:outline-none focus:border-brand/50"
+                    placeholder="Admin Token"
+                  />
+                  <button
+                    onClick={() => setShowToken(!showToken)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
 
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-zinc-400">Editar operacion</h4>
-                  <div className="mb-3 grid gap-2 md:grid-cols-[1fr_auto]">
-                    <input
-                      value={adminToken}
-                      onChange={(event) => setAdminToken(normalizeAdminToken(event.target.value))}
-                      type={showToken ? 'text' : 'password'}
-                      placeholder="ADMIN_API_TOKEN"
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowToken((value) => !value)}
-                      className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
-                    >
-                      {showToken ? 'Ocultar token' : 'Mostrar token'}
-                    </button>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 block ml-1">
+                      Shipping Status
+                    </label>
                     <select
                       value={editForm.shipping_status}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          shipping_status: event.target.value as ShippingStatus
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          shipping_status: e.target.value as ShippingStatus
                         }))
                       }
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
+                      className="w-full appearance-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm focus:outline-none focus:border-brand/50"
                     >
-                      <option value="pending">Pendiente</option>
-                      <option value="preparing">Preparando</option>
-                      <option value="in_transit">En transito</option>
-                      <option value="delivered">Entregado</option>
-                      <option value="partially_cancelled">Cancelado parcial</option>
-                      <option value="cancelled">Cancelado</option>
-                      <option value="lost">Perdido</option>
+                      <option value="pending">Pending</option>
+                      <option value="preparing">Preparing</option>
+                      <option value="in_transit">In Transit</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 block ml-1">
+                      Customer Email
+                    </label>
                     <input
                       value={editForm.customer_email}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, customer_email: event.target.value }))
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, customer_email: e.target.value }))
                       }
-                      placeholder="Email cliente"
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
+                      className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm focus:outline-none focus:border-brand/50"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 block ml-1">Customer Name</label>
                     <input
                       value={editForm.customer_name}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, customer_name: event.target.value }))
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, customer_name: e.target.value }))
                       }
-                      placeholder="Nombre cliente"
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
+                      className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm focus:outline-none focus:border-brand/50"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 block ml-1">
+                      Shipping Address (JSON)
+                    </label>
+                    <textarea
+                      value={editForm.shipping_address_json}
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, shipping_address_json: e.target.value }))
+                      }
+                      rows={5}
+                      className="custom-scrollbar w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 font-mono text-sm focus:outline-none focus:border-brand/50"
+                      placeholder="{}"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 block ml-1">Internal Note</label>
                     <input
-                      value={editForm.customer_phone}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, customer_phone: event.target.value }))
+                      value={editForm.internal_note}
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, internal_note: e.target.value }))
                       }
-                      placeholder="Telefono cliente"
-                      className="rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm"
+                      className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm focus:outline-none focus:border-brand/50"
+                      placeholder="Add a note..."
                     />
                   </div>
-                  <textarea
-                    value={editForm.shipping_address_json}
-                    onChange={(event) =>
-                      setEditForm((prev) => ({ ...prev, shipping_address_json: event.target.value }))
-                    }
-                    rows={6}
-                    className="mt-3 w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-xs outline-none"
-                    placeholder="shipping_address_json"
-                  />
-                  <textarea
-                    value={editForm.internal_note}
-                    onChange={(event) =>
-                      setEditForm((prev) => ({ ...prev, internal_note: event.target.value }))
-                    }
-                    rows={3}
-                    className="mt-3 w-full rounded-xl border border-white/10 bg-surface100 px-3 py-2 text-sm outline-none"
-                    placeholder="Nota interna"
-                  />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={savingDetail}
-                      onClick={() => void saveOrderChanges()}
-                      className={cn(
-                        'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
-                        savingDetail
-                          ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                          : 'bg-brand text-black'
-                      )}
-                    >
-                      <Save className="h-4 w-4" />
-                      {savingDetail ? 'Guardando...' : 'Guardar cambios'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={savingDetail || !activeOrder}
-                      onClick={resetOrderChanges}
-                      className={cn(
-                        'rounded-xl px-3 py-2 text-xs font-semibold',
-                        savingDetail || !activeOrder
-                          ? 'cursor-not-allowed bg-surface200 text-zinc-500'
-                          : 'bg-white/10 text-zinc-100'
-                      )}
-                    >
-                      Cancelar cambios
-                    </button>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-zinc-400">Articulos</h4>
-                  {activeOrder.items.length === 0 ? (
-                    <p className="text-sm text-zinc-500">Sin articulos.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {activeOrder.items.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-zinc-200">{item.product_title || item.product_slug}</p>
-                            <p className="text-zinc-200">
-                              {item.quantity} x {formatMoney(item.unit_price_cents, activeOrder.currency)}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-zinc-500">Slug: {item.product_slug}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-zinc-400">Metadatos operativos</h4>
-                  <div className="grid gap-2 text-sm md:grid-cols-2">
-                    <p>Stripe session: <span className="text-zinc-200">{activeOrder.stripe_session_id || '-'}</span></p>
-                    <p>Nota interna: <span className="text-zinc-200">{activeOrder.internal_note || '-'}</span></p>
-                    <p>Reservas: <span className="text-zinc-200">{activeOrder.reservations.length}</span></p>
-                    <p>Eventos Stripe: <span className="text-zinc-200">{activeOrder.stripe_events.length}</span></p>
-                  </div>
-
-                  {activeOrder.reservations.length > 0 ? (
-                    <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
-                      <p className="mb-2 text-xs uppercase tracking-[0.14em] text-zinc-500">Reservas</p>
-                      <pre className="overflow-auto text-xs text-zinc-300">
-                        {JSON.stringify(activeOrder.reservations, null, 2)}
-                      </pre>
-                    </div>
-                  ) : null}
-
-                  {activeOrder.stripe_events.length > 0 ? (
-                    <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
-                      <p className="mb-2 text-xs uppercase tracking-[0.14em] text-zinc-500">Eventos Stripe</p>
-                      <pre className="overflow-auto text-xs text-zinc-300">
-                        {JSON.stringify(activeOrder.stripe_events, null, 2)}
-                      </pre>
-                    </div>
-                  ) : null}
-                </section>
+                </div>
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center p-6 text-center">
-            <div className="max-w-md space-y-3">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
-                <Search className="h-8 w-8 text-zinc-500" />
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  onClick={resetOrderChanges}
+                  disabled={savingDetail || !activeOrder}
+                  className="px-6 py-2.5 rounded-full bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={() => void saveOrderChanges()}
+                  disabled={savingDetail}
+                  className="flex items-center gap-2 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-black transition-colors hover:bg-brand/90 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {savingDetail ? 'Saving...' : 'Save Changes'}
+                </button>
               </div>
-              <h3 className="text-lg font-medium text-zinc-300">Ningun pedido seleccionado</h3>
-              <p className="text-sm text-zinc-500">
-                Haz clic en un pedido de la lista para ver todos sus detalles e informacion de envio aqui.
-              </p>
+            </div>
+
+            {/* Items Table */}
+            <div className="bg-black/20 rounded-3xl p-6 border border-white/[0.04]">
+              <h4 className="text-sm font-semibold mb-4 text-zinc-300">
+                Items ({activeOrder.items.length})
+              </h4>
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-sm min-w-[400px]">
+                  <thead>
+                    <tr className="text-xs text-zinc-500 uppercase tracking-wider border-b border-white/5">
+                      <th className="pb-3 font-medium">Product</th>
+                      <th className="pb-3 font-medium text-right">Qty</th>
+                      <th className="pb-3 font-medium text-right">Price</th>
+                      <th className="pb-3 font-medium text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {activeOrder.items.map((item) => (
+                      <tr key={item.id} className="text-zinc-300">
+                        <td className="py-4">
+                          <p className="font-medium text-white">
+                            {item.product_title || item.product_slug}
+                          </p>
+                          <p className="text-xs text-zinc-500 mt-1">{item.product_type}</p>
+                        </td>
+                        <td className="py-4 text-right">{item.quantity}</td>
+                        <td className="py-4 text-right">
+                          {formatMoney(item.unit_price_cents, activeOrder.currency)}
+                        </td>
+                        <td className="py-4 text-right font-medium text-white">
+                          {formatMoney(item.amount_cents, activeOrder.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-transparent to-white/[0.01]">
+            <div className="w-24 h-24 mb-6 rounded-full bg-white/[0.02] border border-white/[0.04] flex items-center justify-center flex-shrink-0">
+              <Search className="w-8 h-8 text-zinc-600" />
+            </div>
+            <h3 className="text-xl font-medium text-white mb-2">No Order Selected</h3>
+            <p className="text-zinc-500 max-w-sm">
+              Select an order from the list on the left to view its complete details, items, and
+              manage shipping information.
+            </p>
+          </div>
         )}
-      </div>
       </div>
     </div>
   )

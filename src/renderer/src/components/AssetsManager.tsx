@@ -73,7 +73,9 @@ type DeleteAssetResponse = {
 }
 
 function normalizePrefixInput(value: string): string {
-  const trimmed = String(value || '').trim().replace(/\\/g, '/')
+  const trimmed = String(value || '')
+    .trim()
+    .replace(/\\/g, '/')
   const normalized = trimmed.replace(/^\/+/, '').replace(/\/+/g, '/')
   if (!normalized) return 'products/'
   return normalized.endsWith('/') ? normalized : `${normalized}/`
@@ -107,7 +109,10 @@ function buildFileName(baseName: string, extension: string): string {
     String(baseName || '')
       .trim()
       .replace(/\.(webp|png|jpe?g)$/i, '') || 'asset'
-  const normalizedExtension = String(extension || '').trim().replace(/^\.+/, '').toLowerCase()
+  const normalizedExtension = String(extension || '')
+    .trim()
+    .replace(/^\.+/, '')
+    .toLowerCase()
   return normalizedExtension ? `${normalizedBaseName}.${normalizedExtension}` : normalizedBaseName
 }
 
@@ -128,7 +133,11 @@ function isQueueItemWebpReady(item: QueueItem): boolean {
 }
 
 function canEditQueueItemName(item: QueueItem): boolean {
-  return isQueueItemWebpReady(item) && item.uploadStatus !== 'uploading' && item.uploadStatus !== 'uploaded'
+  return (
+    isQueueItemWebpReady(item) &&
+    item.uploadStatus !== 'uploading' &&
+    item.uploadStatus !== 'uploaded'
+  )
 }
 
 function usageRoleLabel(role: AssetUsageProduct['role']): string {
@@ -363,7 +372,8 @@ export default function AssetsManager(): React.JSX.Element {
         setHasMore(false)
         setMsg({
           type: 'error',
-          text: error instanceof Error ? error.message : 'No se pudo cargar la biblioteca de assets.'
+          text:
+            error instanceof Error ? error.message : 'No se pudo cargar la biblioteca de assets.'
         })
       } finally {
         if (alive) setLoadingAssets(false)
@@ -698,8 +708,8 @@ export default function AssetsManager(): React.JSX.Element {
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       {dragActive && (
-        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-black/55 px-6">
-          <div className="w-full max-w-2xl rounded-[2rem] border border-brand/40 bg-surface100/95 p-8 text-center shadow-glow backdrop-blur">
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-6">
+          <div className="w-full max-w-2xl rounded-[2rem] border border-brand/35 bg-surface100/95 p-8 text-center shadow-glow backdrop-blur">
             <p className="text-[11px] uppercase tracking-[0.32em] text-brand/70">Dropzone</p>
             <h3 className="mt-3 text-2xl font-semibold text-zinc-100">
               Suelta las imagenes para agregarlas a la cola
@@ -731,8 +741,8 @@ export default function AssetsManager(): React.JSX.Element {
         </div>
       )}
 
-      <div className="grid h-[calc(100vh-80px)] gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+      <div className="grid h-[calc(100vh-80px)] gap-6 rounded-[32px] border border-white/10 bg-surface/80 p-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/10 bg-surface100 p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">Assets R2</p>
@@ -779,7 +789,7 @@ export default function AssetsManager(): React.JSX.Element {
             />
           </div>
 
-          <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
             <div className="flex flex-col gap-3 lg:flex-row">
               <label className="flex-1">
                 <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
@@ -813,7 +823,7 @@ export default function AssetsManager(): React.JSX.Element {
           </div>
 
           <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="rounded-2xl bg-black/20 p-4">
+            <div className="rounded-2xl bg-black/25 p-4">
               {selectedQueueItem ? (
                 <>
                   <img
@@ -854,7 +864,9 @@ export default function AssetsManager(): React.JSX.Element {
                           )}
                         />
                         <span className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300">
-                          {selectedQueueNameParts.extension ? `.${selectedQueueNameParts.extension}` : 'sin ext'}
+                          {selectedQueueNameParts.extension
+                            ? `.${selectedQueueNameParts.extension}`
+                            : 'sin ext'}
                         </span>
                       </div>
                       <p className="mt-2 text-xs text-zinc-500">
@@ -923,11 +935,13 @@ export default function AssetsManager(): React.JSX.Element {
               )}
             </div>
 
-            <div className="space-y-3 rounded-2xl bg-black/20 p-4">
+            <div className="space-y-3 rounded-2xl bg-black/25 p-4">
               <button
                 type="button"
                 onClick={() => void optimizeSelected()}
-                disabled={!selectedQueueItem || Boolean(optimizingId) || optimizingAll || uploadingAll}
+                disabled={
+                  !selectedQueueItem || Boolean(optimizingId) || optimizingAll || uploadingAll
+                }
                 className={cn(
                   'inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold',
                   !selectedQueueItem || Boolean(optimizingId) || optimizingAll || uploadingAll
@@ -989,7 +1003,11 @@ export default function AssetsManager(): React.JSX.Element {
                       selectedQueueId === item.id ? 'border-brand shadow-glow' : 'border-white/10'
                     )}
                   >
-                    <img src={item.url} alt={item.name} className="aspect-square w-full object-cover" />
+                    <img
+                      src={item.url}
+                      alt={item.name}
+                      className="aspect-square w-full object-cover"
+                    />
                     <div className="space-y-1 p-3">
                       <p className="truncate text-xs font-medium text-zinc-200">{item.name}</p>
                       <p className="text-[11px] text-zinc-500">{fmtSize(item.size)}</p>
@@ -1013,7 +1031,7 @@ export default function AssetsManager(): React.JSX.Element {
           </div>
         </section>
 
-        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
+        <section className="custom-scrollbar flex flex-col overflow-y-auto rounded-3xl border border-white/10 bg-surface100 p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-brand/70">Biblioteca</p>
@@ -1030,7 +1048,7 @@ export default function AssetsManager(): React.JSX.Element {
             </button>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-zinc-400">
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4 text-xs text-zinc-400">
             Prefijo mostrado: <span className="font-semibold text-zinc-200">{activePrefix}</span>
           </div>
 
@@ -1074,7 +1092,7 @@ export default function AssetsManager(): React.JSX.Element {
               assets.map((asset) => (
                 <article
                   key={asset.key}
-                  className="overflow-hidden rounded-2xl border border-white/10 bg-black/20"
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-black/25"
                 >
                   <div className="grid gap-0 sm:grid-cols-[112px_minmax(0,1fr)]">
                     <div className="bg-white/5">

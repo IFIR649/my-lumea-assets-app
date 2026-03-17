@@ -1,117 +1,117 @@
-import { useEffect, useMemo, useState } from "react";
-import { adminNotesApi, notesApi, type Note } from "../lib/api";
-import { NoteCard } from "./NoteCard";
-import { NoteViewerModal } from "./NoteViewerModal";
+import { useEffect, useMemo, useState } from 'react'
+import { adminNotesApi, notesApi, type Note } from '../lib/api'
+import { NoteCard } from './NoteCard'
+import { NoteViewerModal } from './NoteViewerModal'
 
 function isLocalhost() {
-  const host = window.location.hostname;
-  return host === "localhost" || host === "127.0.0.1";
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
 }
 
 function pageWindow(current: number, total: number, size = 4) {
-  const start = Math.max(1, Math.min(current, Math.max(1, total - size + 1)));
-  const end = Math.min(total, start + size - 1);
-  const pages = [];
+  const start = Math.max(1, Math.min(current, Math.max(1, total - size + 1)))
+  const end = Math.min(total, start + size - 1)
+  const pages = []
 
   for (let page = start; page <= end; page += 1) {
-    pages.push(page);
+    pages.push(page)
   }
 
-  return pages;
+  return pages
 }
 
 export function NotesPanel({
-  toast,
+  toast
 }: {
-  toast: (kind: "success" | "error" | "info", msg: string) => void;
+  toast: (kind: 'success' | 'error' | 'info', msg: string) => void
 }) {
-  const [top, setTop] = useState<{ pinned: Note[]; latest: Note[] } | null>(null);
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
+  const [top, setTop] = useState<{ pinned: Note[]; latest: Note[] } | null>(null)
+  const [q, setQ] = useState('')
+  const [page, setPage] = useState(1)
   const [search, setSearch] = useState<{
-    total: number;
-    totalPages: number;
-    rows: Note[];
-  } | null>(null);
-  const [viewer, setViewer] = useState<Note | null>(null);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+    total: number
+    totalPages: number
+    rows: Note[]
+  } | null>(null)
+  const [viewer, setViewer] = useState<Note | null>(null)
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
 
-  const canAdmin = isLocalhost();
+  const canAdmin = isLocalhost()
 
   async function refreshTop() {
     try {
-      const data = await notesApi.top();
-      setTop(data);
+      const data = await notesApi.top()
+      setTop(data)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "error";
-      toast("error", `No pude cargar top: ${message}`);
+      const message = error instanceof Error ? error.message : 'error'
+      toast('error', `No pude cargar top: ${message}`)
     }
   }
 
   async function refreshSearch() {
     try {
-      const data = await notesApi.search(q, page);
-      setSearch({ total: data.total, totalPages: data.totalPages, rows: data.rows });
+      const data = await notesApi.search(q, page)
+      setSearch({ total: data.total, totalPages: data.totalPages, rows: data.rows })
     } catch (error) {
-      const message = error instanceof Error ? error.message : "error";
-      toast("error", `No pude buscar: ${message}`);
+      const message = error instanceof Error ? error.message : 'error'
+      toast('error', `No pude buscar: ${message}`)
     }
   }
 
   useEffect(() => {
-    void refreshTop();
-  }, []);
+    void refreshTop()
+  }, [])
 
   useEffect(() => {
-    void refreshSearch();
+    void refreshSearch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
+  }, [q, page])
 
   const shared = useMemo(() => {
-    const pinned = top?.pinned ?? [];
-    const latest = top?.latest ?? [];
-    const pinnedIds = new Set(pinned.map((note) => note.id));
+    const pinned = top?.pinned ?? []
+    const latest = top?.latest ?? []
+    const pinnedIds = new Set(pinned.map((note) => note.id))
 
-    return [...pinned, ...latest.filter((note) => !pinnedIds.has(note.id))];
-  }, [top]);
+    return [...pinned, ...latest.filter((note) => !pinnedIds.has(note.id))]
+  }, [top])
 
   const pages = useMemo(() => {
-    const totalPages = search?.totalPages || 1;
-    return pageWindow(page, totalPages, 4);
-  }, [page, search?.totalPages]);
+    const totalPages = search?.totalPages || 1
+    return pageWindow(page, totalPages, 4)
+  }, [page, search?.totalPages])
 
   async function createNote() {
-    const nextTitle = title.trim().slice(0, 60);
-    const nextContent = content.trim();
+    const nextTitle = title.trim().slice(0, 60)
+    const nextContent = content.trim()
 
-    if (!nextTitle) return toast("info", "Pon un titulo (max 60).");
-    if (!nextContent) return toast("info", "Pon el contenido.");
+    if (!nextTitle) return toast('info', 'Pon un titulo (max 60).')
+    if (!nextContent) return toast('info', 'Pon el contenido.')
 
     try {
-      await notesApi.create(nextTitle, nextContent);
-      setTitle("");
-      setContent("");
-      toast("success", "Nota creada.");
-      await refreshTop();
-      await refreshSearch();
+      await notesApi.create(nextTitle, nextContent)
+      setTitle('')
+      setContent('')
+      toast('success', 'Nota creada.')
+      await refreshTop()
+      await refreshSearch()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "error";
-      toast("error", `No pude crear: ${message}`);
+      const message = error instanceof Error ? error.message : 'error'
+      toast('error', `No pude crear: ${message}`)
     }
   }
 
   async function togglePin(note: Note) {
-    if (!canAdmin) return;
+    if (!canAdmin) return
 
     try {
-      await adminNotesApi.pin(note.id, note.pinned === 0);
-      toast("success", note.pinned ? "Desanclada." : "Anclada.");
-      await refreshTop();
-      await refreshSearch();
+      await adminNotesApi.pin(note.id, note.pinned === 0)
+      toast('success', note.pinned ? 'Desanclada.' : 'Anclada.')
+      await refreshTop()
+      await refreshSearch()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "error";
-      toast("error", `No pude anclar: ${message}`);
+      const message = error instanceof Error ? error.message : 'error'
+      toast('error', `No pude anclar: ${message}`)
     }
   }
 
@@ -154,7 +154,7 @@ export function NotesPanel({
           <button
             className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
             onClick={() => {
-              void refreshTop();
+              void refreshTop()
             }}
             type="button"
           >
@@ -180,12 +180,12 @@ export function NotesPanel({
                       type="button"
                       className="rounded-xl border border-slate-200 bg-white/80 px-2 py-1 text-xs font-semibold text-slate-700 opacity-0 group-hover:opacity-100"
                       onClick={(e) => {
-                        e.stopPropagation();
-                        void togglePin(note);
+                        e.stopPropagation()
+                        void togglePin(note)
                       }}
-                      title={note.pinned ? "Desanclar" : "Anclar"}
+                      title={note.pinned ? 'Desanclar' : 'Anclar'}
                     >
-                      {note.pinned ? "📌" : "📍"}
+                      {note.pinned ? '📌' : '📍'}
                     </button>
                   ) : null
                 }
@@ -204,14 +204,14 @@ export function NotesPanel({
             placeholder="Buscar por titulo, contenido o usuario..."
             value={q}
             onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
+              setQ(e.target.value)
+              setPage(1)
             }}
           />
           <button
             className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-white"
             onClick={() => {
-              void refreshSearch();
+              void refreshSearch()
             }}
             type="button"
           >
@@ -221,7 +221,12 @@ export function NotesPanel({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(search?.rows ?? []).slice(0, 10).map((note) => (
-            <NoteCard key={note.id} note={note} toast={toast} onOpen={(selected) => setViewer(selected)} />
+            <NoteCard
+              key={note.id}
+              note={note}
+              toast={toast}
+              onOpen={(selected) => setViewer(selected)}
+            />
           ))}
 
           {(search?.rows?.length ?? 0) === 0 ? (
@@ -246,11 +251,11 @@ export function NotesPanel({
               key={pageNumber}
               type="button"
               className={[
-                "rounded-xl px-3 py-2 text-sm font-semibold",
+                'rounded-xl px-3 py-2 text-sm font-semibold',
                 pageNumber === page
-                  ? "bg-slate-900 text-white"
-                  : "border border-slate-200 bg-white/70 text-slate-700 hover:bg-white",
-              ].join(" ")}
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-200 bg-white/70 text-slate-700 hover:bg-white'
+              ].join(' ')}
               onClick={() => setPage(pageNumber)}
             >
               {pageNumber}
@@ -279,5 +284,5 @@ export function NotesPanel({
         toast={toast}
       />
     </div>
-  );
+  )
 }

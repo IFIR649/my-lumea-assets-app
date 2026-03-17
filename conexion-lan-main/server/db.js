@@ -1,24 +1,28 @@
-const path = require("path");
-const Database = require("better-sqlite3");
+const path = require('path')
+const Database = require('better-sqlite3')
 
-const dbPath = path.join(__dirname, "lan-share.db");
-const db = new Database(dbPath);
+const dbPath = path.join(__dirname, 'lan-share.db')
+const db = new Database(dbPath)
 
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
 
 function ensureNotesColumns(database) {
-  const cols = database.prepare("PRAGMA table_info(notes)").all().map((c) => c.name);
-  const hasLegacyPinned = cols.includes("is_pinned");
+  const cols = database
+    .prepare('PRAGMA table_info(notes)')
+    .all()
+    .map((c) => c.name)
+  const hasLegacyPinned = cols.includes('is_pinned')
 
-  if (!cols.includes("title")) database.exec("ALTER TABLE notes ADD COLUMN title TEXT;");
-  if (!cols.includes("pinned")) {
-    database.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;");
+  if (!cols.includes('title')) database.exec('ALTER TABLE notes ADD COLUMN title TEXT;')
+  if (!cols.includes('pinned')) {
+    database.exec('ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;')
     if (hasLegacyPinned) {
-      database.exec("UPDATE notes SET pinned = COALESCE(is_pinned, 0);");
+      database.exec('UPDATE notes SET pinned = COALESCE(is_pinned, 0);')
     }
   }
-  if (!cols.includes("updated_at")) database.exec("ALTER TABLE notes ADD COLUMN updated_at INTEGER;");
+  if (!cols.includes('updated_at'))
+    database.exec('ALTER TABLE notes ADD COLUMN updated_at INTEGER;')
 
   // Backfill metadata so old rows render correctly in the new UI.
   database.exec(`
@@ -27,10 +31,12 @@ function ensureNotesColumns(database) {
       title = COALESCE(NULLIF(TRIM(title), ''), NULLIF(SUBSTR(TRIM(content), 1, 80), ''), 'Sin titulo'),
       updated_at = COALESCE(updated_at, created_at),
       pinned = COALESCE(pinned, 0)
-  `);
+  `)
 
-  database.exec("CREATE INDEX IF NOT EXISTS idx_notes_pinned_created ON notes(pinned, created_at DESC);");
-  database.exec("CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);");
+  database.exec(
+    'CREATE INDEX IF NOT EXISTS idx_notes_pinned_created ON notes(pinned, created_at DESC);'
+  )
+  database.exec('CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);')
 }
 
 function initDb() {
@@ -106,9 +112,9 @@ function initDb() {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);
-  `);
+  `)
 
-  ensureNotesColumns(db);
+  ensureNotesColumns(db)
 }
 
-module.exports = { db, initDb, ensureNotesColumns };
+module.exports = { db, initDb, ensureNotesColumns }

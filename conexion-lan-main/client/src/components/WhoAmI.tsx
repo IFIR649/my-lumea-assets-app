@@ -1,24 +1,20 @@
-import { useEffect, useState } from "react";
-import { getClientName, setClientName } from "../lib/identity";
+import { useEffect, useState } from 'react'
+import { getClientName, setClientName } from '../lib/identity'
 
-export function WhoAmI({
-  onDone,
-}: {
-  onDone: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+export function WhoAmI({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
 
   useEffect(() => {
-    const n = getClientName();
+    const n = getClientName()
     if (!n) {
-      setOpen(true);
+      setOpen(true)
     } else {
-      setName(n);
+      setName(n)
     }
-  }, []);
+  }, [])
 
-  if (!open) return null;
+  if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
@@ -34,12 +30,12 @@ export function WhoAmI({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              const v = name.trim();
-              if (!v) return;
-              setClientName(v);
-              setOpen(false);
-              onDone();
+            if (e.key === 'Enter') {
+              const v = name.trim()
+              if (!v) return
+              setClientName(v)
+              setOpen(false)
+              onDone()
             }
           }}
           autoFocus
@@ -49,8 +45,8 @@ export function WhoAmI({
           <button
             className="rounded-xl border border-slate-200 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
             onClick={() => {
-              setOpen(false);
-              onDone();
+              setOpen(false)
+              onDone()
             }}
             type="button"
           >
@@ -59,11 +55,11 @@ export function WhoAmI({
           <button
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
             onClick={() => {
-              const v = name.trim();
-              if (!v) return;
-              setClientName(v);
-              setOpen(false);
-              onDone();
+              const v = name.trim()
+              if (!v) return
+              setClientName(v)
+              setOpen(false)
+              onDone()
             }}
             type="button"
           >
@@ -72,5 +68,5 @@ export function WhoAmI({
         </div>
       </div>
     </div>
-  );
+  )
 }
